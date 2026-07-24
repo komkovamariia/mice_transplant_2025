@@ -1,0 +1,23 @@
+name: mirpy
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - numpy=2.5
+  - pandas=3.0
+  - polars=1.43
+  - scipy=1.18
+  - scikit-learn=1.9
+  - matplotlib=3.11
+  - seaborn=0.13
+  - openpyxl=3.1
+  - nbformat=5.10
+  - rpy2
+  - bioconductor-edger
+  - bioconductor-deseq2
+  - pip
+  - pip:
+      - mirpy-lib==3.4.0
+      - logomaker==0.8.7
+      - python-docx==1.2.0

@@ -1,0 +1,16 @@
+# Reproducibility pin — mouse allo-transplant TCR reanalysis (mirpy)
+# Python 3.12.13
+mirpy-lib==3.4.0
+numpy==2.5.1
+pandas==3.0.3
+polars==1.43.0
+scipy==1.18.0
+scikit-learn==1.9.0
+matplotlib==3.11.1
+seaborn==0.13.2
+logomaker==0.8.7
+openpyxl==3.1.5
+python-docx==1.2.0
+nbformat==5.10.4
+# The venn_original.ipynb edgeR/DESeq2 block additionally needs:
+#   rpy2 (Python<->R bridge) and, in R: edgeR, DESeq2 (Bioconductor)

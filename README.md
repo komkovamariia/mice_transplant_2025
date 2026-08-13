@@ -22,15 +22,16 @@
 
 ## Структура репозитория
 
-```
-├── venn_original.ipynb        # Исходный анализ: диаграммы Венна + edgeR/DESeq2/Fisher (α- и β-цепи)
-├── mirpy_analysis.ipynb       # Новый анализ: вложение, плотность, мотивы, MMD, контрасты, robustness
-├── results_summary.ipynb      # Сводное сравнение трёх подходов (читает готовые таблицы)
-├── методология_mirpy.docx     # Статья: методология, лит.обзор, интерпретация сходимостей/расхождений
-├── results_tables.xlsx        # Агрегированные таблицы всех подходов (9 листов)
-├── figures/                   # Публикационные рисунки (fig1–fig6)
-├── requirements.txt           # Точные версии (pip)
-└── environment.yml            # Полное окружение conda (включая rpy2 + edgeR/DESeq2)
+```text
+├── venn_original.ipynb        # Исходный анализ: Venn + edgeR/DESeq2/Fisher (TRA/TRB)
+├── mirpy_analysis.ipynb       # Вложение, плотность, мотивы, MMD и robustness
+├── results_summary.ipynb      # Сводное сравнение подходов
+├── study2_alloreactivity/     # Независимый анализ аллореактивных клонотипов
+├── методология_mirpy.docx     # Методология и интерпретация
+├── results_tables.xlsx        # Агрегированные таблицы
+├── figures/                   # Публикационные рисунки
+├── requirements.txt           # Python-only зависимости
+└── environment.yml            # Каноническое полное окружение статьи
 ```
 
 ### Тетради
@@ -40,18 +41,6 @@
 | **`venn_original.ipynb`** | Первичный анализ, положенный в основу статьи: клонотип = `(CDR3, V)`, диаграммы Венна пересечений групп, локализация V-сегментов в области «только g1», счётный дифференциальный анализ (edgeR, DESeq2, точный тест Фишера), консенсусные клонотипы. |
 | **`mirpy_analysis.ipynb`** | Независимая проверка и расширение: единый базис вложения по объединённому пулу, плотностный анализ обогащения (g1 vs g5+g6), конвергентные мотивы CDR3, репертуарные отпечатки Φ(S) и матрица MMD с PERMANOVA, witness-анализ, расширенные биологические контрасты, проверка устойчивости на клонотипах aaVJ, согласование трёх линий. |
 | **`results_summary.ipynb`** | Высокоуровневая сводка: читает готовые таблицы результатов и воспроизводит ключевые выводы без повторного тяжёлого вычисления вложения. |
-
-### Рисунки
-
-| Файл | Содержание |
-|---|---|
-| `figures/fig1_density_vranking.png` | Ранжирование V-сегментов по плотностному обогащению в g1 |
-| `figures/fig2_mmd_to_baseline.png` | Расстояние MMD каждой группы до интактного базиса g1 |
-| `figures/fig2_repertoire_mds.png` | MDS-ординация образцов по матрице MMD |
-| `figures/fig3_threeway_ranks.png` | Сопоставление рангов V-сегментов тремя методами |
-| `figures/fig4_motif_logos.png` | Логотипы конвергентных мотивов CDR3 |
-| `figures/fig5_extended_contrasts.png` | Расширенные контрасты (аллогенный vs сингенный костный мозг; вклад тимуса) |
-| `figures/fig6_aaVJ_robustness.png` | Устойчивость ранжирования к включению J-сегмента |
 
 ---
 
@@ -68,25 +57,108 @@
 
 ---
 
-## Воспроизведение
+## Воспроизводимое окружение
 
-```bash
-# 1. Окружение (conda — включает rpy2 + Bioconductor edgeR/DESeq2 для venn_original.ipynb)
-conda env create -f environment.yml
-conda activate mirpy
+Для статьи каноническим является **`environment.yml`**. Он устанавливает Python-стек, Jupyter, R/rpy2, Bioconductor `edgeR`/`DESeq2`, `mirpy-lib` и `repseq`. Локальный checkout `~/soft/repseq`, ручной `PYTHONPATH` и отдельная установка `dill` не нужны.
 
-# либо только Python-часть (mirpy_analysis.ipynb, results_summary.ipynb):
-pip install -r requirements.txt
+`repseq` устанавливается непосредственно из GitHub с фиксированного коммита:
 
-# 2. Данные: поместите исходные счётные матрицы и подготовленный
-#    clean_clonotypes_aaV.parquet в каталог data/ (или задайте MIRPY_DATA_DIR)
-export MIRPY_DATA_DIR=/путь/к/данным
-
-# 3. Запуск
-jupyter lab
+```text
+https://github.com/mmjmike/repseq.git@1c464120ac0675608178608af531f90fcba17deb
 ```
 
-**Порядок запуска:** `venn_original.ipynb` (исходный анализ) → `mirpy_analysis.ipynb` (вложение; тяжёлый этап `fit` требует несколько десятков ГБ ОЗУ и порядка десятков минут — промежуточные координаты кэшируются) → `results_summary.ipynb` (сводка по готовым таблицам).
+Фиксация SHA принципиальна: она делает источник `repseq` однозначным и не позволяет будущим изменениям ветки `main` незаметно менять результаты анализа.
+
+### Чистая установка
+
+```bash
+git clone https://github.com/komkovamariia/mice_transplant_2025.git
+cd mice_transplant_2025
+
+conda env create -f environment.yml
+conda activate mice-transplant-2025
+
+python -m ipykernel install --user \
+  --name mice-transplant-2025 \
+  --display-name "Python (mice-transplant-2025)"
+```
+
+Для уже созданного окружения после изменения `environment.yml`:
+
+```bash
+conda env update -n mice-transplant-2025 -f environment.yml --prune
+conda activate mice-transplant-2025
+```
+
+### Проверка установки перед расчётами
+
+```bash
+python - <<'PY'
+import repseq
+from repseq import clone_filter, clonosets, clustering, diffexp, intersections
+from repseq import io, logo, mixcr, slurm, stats, vdjtools
+import dill
+import matplotlib_venn
+from adjustText import adjust_text
+import rpy2.robjects as ro
+from rpy2.robjects.packages import isinstalled
+import mirpy
+
+print("repseq:", repseq.__file__)
+print("edgeR:", isinstalled("edgeR"))
+print("DESeq2:", isinstalled("DESeq2"))
+assert hasattr(repseq, "__path__"), "repseq must be a package, not src/repseq.py"
+assert isinstalled("edgeR")
+assert isinstalled("DESeq2")
+print("Environment OK")
+PY
+```
+
+Нормальный путь `repseq` должен вести в установленный package внутри окружения, а не в локальный файл `src/repseq.py`.
+
+### Python-only установка
+
+`requirements.txt` оставлен для задач, которым не нужны R/Bioconductor-блоки. Для полного запуска `venn_original.ipynb` используйте `environment.yml`.
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### Данные
+
+Поместите исходные счётные матрицы и подготовленный `clean_clonotypes_aaV.parquet` в `data/` либо задайте путь через переменную окружения:
+
+```bash
+export MIRPY_DATA_DIR=/path/to/data
+```
+
+### Порядок запуска
+
+1. `venn_original.ipynb`
+2. `mirpy_analysis.ipynb`
+3. `results_summary.ipynb`
+
+Для серверного воспроизводимого запуска первой тетради:
+
+```bash
+mkdir -p audit_runs logs
+jupyter nbconvert \
+  --to notebook \
+  --execute venn_original.ipynb \
+  --ExecutePreprocessor.kernel_name=mice-transplant-2025 \
+  --ExecutePreprocessor.timeout=-1 \
+  --output-dir audit_runs \
+  --output 01_venn_original.executed.ipynb \
+  2>&1 | tee logs/01_venn_original.log
+```
+
+`mirpy_analysis.ipynb` содержит наиболее тяжёлый этап; для него требуется существенно больше оперативной памяти, чем для сводной тетради.
+
+---
+
+## Почему Matplotlib закреплён на 3.10.1
+
+Исходный `venn_original.ipynb` использует исторический вызов `plt.boxplot(..., labels=...)`. В Matplotlib 3.11 аргумент `labels` удалён в пользу `tick_labels`, поэтому без фиксации версии старый исходный notebook падает с `TypeError`. Для воспроизведения исходного кода окружение статьи закрепляет Matplotlib 3.10.1.
 
 ---
 
@@ -94,20 +166,14 @@ jupyter lab
 
 Первичные данные секвенирования получены в рамках исходного исследования. Подготовленные клонотипические таблицы и промежуточные артефакты, необходимые для воспроизведения, предоставляются по запросу / размещаются согласно требованиям исходной публикации. Настоящий репозиторий содержит код, агрегированные таблицы результатов и рисунки.
 
-## Версии
+## Ключевые версии
 
-Python 3.12.13, mirpy-lib 3.4.0, numpy 2.5.1, pandas 3.0.3, polars 1.43.0, scipy 1.18.0, scikit-learn 1.9.0, matplotlib 3.11.1. Полный список — в `requirements.txt` и `environment.yml`.
+Python 3.12.13, mirpy-lib 3.4.0, numpy 2.5.1, pandas 3.0.3, polars 1.43.0, scipy 1.18.0, scikit-learn 1.9.0, Matplotlib 3.10.1; `repseq` закреплён на Git commit `1c464120ac0675608178608af531f90fcba17deb`. Полный набор зависимостей указан в `environment.yml`.
 
+---
 
 ## Исследование 2 — Поиск аллореактивных клонов (mirpy)
 
-Второй, независимый анализ того же набора данных, целиком на инструментарии
-[mirpy / repseq](https://github.com/antigenomics/mirpy). Многосигнальный конвейер
-поиска аллореактивных клонотипов α-цепи TCR: профили разнообразия (числа Хилла),
-биофизическая сигнатура CDR3, сеть сходства и конвергентные кластеры,
-вероятность генерации (OLGA), публичные клоны и структура компартментов,
-аннотация VDJdb. Независимо воспроизводит ранжирование V-сегментов Исследования 1
-(ρ Спирмена = 1,00) и расширяет его до уровня отдельных клонов.
+Второй, независимый анализ того же набора данных, целиком на инструментарии mirpy / repseq. Многосигнальный конвейер поиска аллореактивных клонотипов α-цепи TCR: профили разнообразия (числа Хилла), биофизическая сигнатура CDR3, сеть сходства и конвергентные кластеры, вероятность генерации (OLGA), публичные клоны и структура компартментов, аннотация VDJdb. Независимо воспроизводит ранжирование V-сегментов Исследования 1 (ρ Спирмена = 1,00) и расширяет его до уровня отдельных клонов.
 
-См. каталог [`study2_alloreactivity/`](study2_alloreactivity/) — ноутбук,
-рукопись, таблицы результатов и рисунки.
+См. каталог [`study2_alloreactivity/`](study2_alloreactivity/) — ноутбук, рукопись, таблицы результатов и рисунки.

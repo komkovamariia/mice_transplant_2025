@@ -1,23 +1,54 @@
-name: mirpy
+name: mice-transplant-2025
+
 channels:
   - conda-forge
   - bioconda
+
 dependencies:
-  - python=3.12
-  - numpy=2.5
-  - pandas=3.0
-  - polars=1.43
-  - scipy=1.18
-  - scikit-learn=1.9
-  - matplotlib=3.11
-  - seaborn=0.13
-  - openpyxl=3.1
-  - nbformat=5.10
+  # Reproducibility pins used by the article notebooks.
+  - python=3.12.13
+  - pip>=25
+  - setuptools>=77
+  - wheel
+  - git
+
+  # Main mirpy analysis stack.
+  - numpy=2.5.1
+  - pandas=3.0.3
+  - polars=1.43.0
+  - scipy=1.18.0
+  - statsmodels=0.14
+  - scikit-learn=1.9.0
+  - matplotlib=3.11.1
+  - seaborn=0.13.2
+  - matplotlib-venn=1.1
+  - logomaker=0.8.7
+  - adjusttext=1.3
+  - networkx=3.6
+  - dill=0.4
+  - joblib
+  - pyarrow
+  - openpyxl=3.1.5
+  - pyyaml
+  - requests
+  - tqdm
+
+  # Notebook execution.
+  - jupyterlab
+  - ipykernel
+  - nbconvert
+  - nbformat=5.10.4
+  - ipython
+
+  # R bridge and Bioconductor differential-expression packages.
+  - r-base
   - rpy2
   - bioconductor-edger
   - bioconductor-deseq2
-  - pip
+
+  # Packages distributed through PyPI or a pinned Git revision.
   - pip:
       - mirpy-lib==3.4.0
-      - logomaker==0.8.7
+      - olga==1.2.4
       - python-docx==1.2.0
+      - "repseq @ git+https://github.com/mmjmike/repseq.git@1c464120ac0675608178608af531f90fcba17deb"

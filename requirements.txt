@@ -1,16 +1,34 @@
-# Reproducibility pin — mouse allo-transplant TCR reanalysis (mirpy)
-# Python 3.12.13
+# Python dependencies for the article code.
+# Canonical full installation: environment.yml (also installs R, edgeR and DESeq2).
+# This file is useful for Python-only environments and CI diagnostics.
+
 mirpy-lib==3.4.0
 numpy==2.5.1
 pandas==3.0.3
 polars==1.43.0
 scipy==1.18.0
 scikit-learn==1.9.0
+statsmodels>=0.14,<0.15
 matplotlib==3.11.1
 seaborn==0.13.2
+matplotlib-venn>=1.1,<2
 logomaker==0.8.7
+adjustText>=1.3,<2
+networkx>=3.4,<4
+dill>=0.3.9,<0.5
+joblib
+pyarrow
 openpyxl==3.1.5
+PyYAML
+requests
+tqdm
+olga==1.2.4
 python-docx==1.2.0
 nbformat==5.10.4
-# The venn_original.ipynb edgeR/DESeq2 block additionally needs:
-#   rpy2 (Python<->R bridge) and, in R: edgeR, DESeq2 (Bioconductor)
+nbconvert>=7.16,<8
+ipykernel>=6.29,<7
+rpy2
+
+# repseq is installed from a fixed GitHub commit whose pyproject.toml
+# correctly exposes the repseq package and its runtime dependencies.
+repseq @ git+https://github.com/mmjmike/repseq.git@1c464120ac0675608178608af531f90fcba17deb

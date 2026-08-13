@@ -1,6 +1,6 @@
 # Python dependencies for the article code.
 # Canonical full installation: environment.yml (also installs R, edgeR and DESeq2).
-# This file is useful for Python-only environments and CI diagnostics.
+# This file is useful for Python-only environments and diagnostics.
 
 mirpy-lib==3.4.0
 numpy==2.5.1
@@ -9,7 +9,9 @@ polars==1.43.0
 scipy==1.18.0
 scikit-learn==1.9.0
 statsmodels>=0.14,<0.15
-matplotlib==3.11.1
+# Kept at 3.10.1 because venn_original.ipynb uses boxplot(labels=...),
+# removed in Matplotlib 3.11.
+matplotlib==3.10.1
 seaborn==0.13.2
 matplotlib-venn>=1.1,<2
 logomaker==0.8.7

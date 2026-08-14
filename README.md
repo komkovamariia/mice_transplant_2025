@@ -59,7 +59,7 @@
 
 ## Воспроизводимое окружение
 
-Для статьи каноническим является **`environment.yml`**. Он устанавливает Python-стек, Jupyter, R/rpy2, Bioconductor `edgeR`/`DESeq2`, `mirpy-lib` и `repseq`. Локальный checkout `~/soft/repseq`, ручной `PYTHONPATH` и отдельная установка `dill` не нужны.
+Для статьи каноническим является **`environment.yml`**. Он устанавливает Python-стек, Jupyter, `ipykernel`, R/rpy2, Bioconductor `edgeR`/`DESeq2`, `mirpy-lib` и `repseq`. Локальный checkout `~/soft/repseq`, ручной `PYTHONPATH`, отдельная установка `dill` и ручная регистрация Jupyter kernel не нужны.
 
 `repseq` устанавливается непосредственно из GitHub с фиксированного коммита:
 
@@ -77,11 +77,9 @@ cd mice_transplant_2025
 
 conda env create -f environment.yml
 conda activate mice-transplant-2025
-
-python -m ipykernel install --user \
-  --name mice-transplant-2025 \
-  --display-name "Python (mice-transplant-2025)"
 ```
+
+Никакой `python -m ipykernel install --user` после создания окружения выполнять не требуется. Пакет `ipykernel`, установленный в самом окружении, предоставляет локальный kernelspec `python3` в `${CONDA_PREFIX}/share/jupyter/kernels/python3`. Все воспроизводимые команды ниже запускают именно этот kernel.
 
 Для уже созданного окружения после изменения `environment.yml`:
 
@@ -94,6 +92,7 @@ conda activate mice-transplant-2025
 
 ```bash
 python - <<'PY'
+import sys
 import repseq
 from repseq import clone_filter, clonosets, clustering, diffexp, intersections
 from repseq import io, logo, mixcr, slurm, stats, vdjtools
@@ -104,6 +103,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import isinstalled
 import mirpy
 
+print("python:", sys.executable)
 print("repseq:", repseq.__file__)
 print("edgeR:", isinstalled("edgeR"))
 print("DESeq2:", isinstalled("DESeq2"))
@@ -115,6 +115,14 @@ PY
 ```
 
 Нормальный путь `repseq` должен вести в установленный package внутри окружения, а не в локальный файл `src/repseq.py`.
+
+Проверить встроенный kernel можно без регистрации в пользовательском Jupyter:
+
+```bash
+jupyter kernelspec list
+```
+
+При активном `mice-transplant-2025` среди доступных kernelspec должен быть `python3`, находящийся внутри текущего conda environment.
 
 ### Python-only установка
 
@@ -138,19 +146,33 @@ export MIRPY_DATA_DIR=/path/to/data
 2. `mirpy_analysis.ipynb`
 3. `results_summary.ipynb`
 
-Для серверного воспроизводимого запуска первой тетради:
+Для серверного воспроизводимого запуска первой тетради после `conda activate mice-transplant-2025`:
 
 ```bash
 mkdir -p audit_runs logs
 jupyter nbconvert \
   --to notebook \
   --execute venn_original.ipynb \
-  --ExecutePreprocessor.kernel_name=mice-transplant-2025 \
+  --ExecutePreprocessor.kernel_name=python3 \
   --ExecutePreprocessor.timeout=-1 \
   --output-dir audit_runs \
   --output 01_venn_original.executed.ipynb \
   2>&1 | tee logs/01_venn_original.log
 ```
+
+Альтернатива, которая вообще не зависит от того, какое окружение активно в текущем shell:
+
+```bash
+conda run -n mice-transplant-2025 jupyter nbconvert \
+  --to notebook \
+  --execute venn_original.ipynb \
+  --ExecutePreprocessor.kernel_name=python3 \
+  --ExecutePreprocessor.timeout=-1 \
+  --output-dir audit_runs \
+  --output 01_venn_original.executed.ipynb
+```
+
+Важно: старый `kernelspec` внутри metadata исходного notebook может содержать историческое имя окружения. Для headless-воспроизведения это не используется: параметр `--ExecutePreprocessor.kernel_name=python3` явно выбирает kernel текущего канонического окружения и не требует пользовательской регистрации kernelspec.
 
 `mirpy_analysis.ipynb` содержит наиболее тяжёлый этап; для него требуется существенно больше оперативной памяти, чем для сводной тетради.
 

@@ -69,6 +69,8 @@ https://github.com/mmjmike/repseq.git@1c464120ac0675608178608af531f90fcba17deb
 
 Фиксация SHA принципиальна: она делает источник `repseq` однозначным и не позволяет будущим изменениям ветки `main` незаметно менять результаты анализа.
 
+`rpy2` закреплён на версии **3.6.7**. В `venn_original.ipynb` используется актуальный локальный `(default_converter + pandas2ri.converter).context()` вместо удалённого `pandas2ri.activate()`.
+
 ### Чистая установка
 
 ```bash
@@ -172,7 +174,7 @@ conda run -n mice-transplant-2025 jupyter nbconvert \
   --output 01_venn_original.executed.ipynb
 ```
 
-Важно: старый `kernelspec` внутри metadata исходного notebook может содержать историческое имя окружения. Для headless-воспроизведения это не используется: параметр `--ExecutePreprocessor.kernel_name=python3` явно выбирает kernel текущего канонического окружения и не требует пользовательской регистрации kernelspec.
+`venn_original.ipynb` уже содержит portable kernelspec `python3`; пользовательская регистрация kernel не требуется. Для headless-воспроизведения параметр `--ExecutePreprocessor.kernel_name=python3` оставлен явно, чтобы запуск не зависел от metadata старых локальных копий notebook.
 
 `mirpy_analysis.ipynb` содержит наиболее тяжёлый этап; для него требуется существенно больше оперативной памяти, чем для сводной тетради.
 
@@ -190,7 +192,7 @@ conda run -n mice-transplant-2025 jupyter nbconvert \
 
 ## Ключевые версии
 
-Python 3.12.13, mirpy-lib 3.4.0, numpy 2.5.1, pandas 3.0.3, polars 1.43.0, scipy 1.18.0, scikit-learn 1.9.0, Matplotlib 3.10.1; `repseq` закреплён на Git commit `1c464120ac0675608178608af531f90fcba17deb`. Полный набор зависимостей указан в `environment.yml`.
+Python 3.12.13, mirpy-lib 3.4.0, numpy 2.5.1, pandas 3.0.3, polars 1.43.0, scipy 1.18.0, scikit-learn 1.9.0, Matplotlib 3.10.1, rpy2 3.6.7; `repseq` закреплён на Git commit `1c464120ac0675608178608af531f90fcba17deb`. Полный набор зависимостей указан в `environment.yml`.
 
 ---
 

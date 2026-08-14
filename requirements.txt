@@ -29,7 +29,8 @@ python-docx==1.2.0
 nbformat==5.10.4
 nbconvert>=7.16,<8
 ipykernel>=6.29,<7
-rpy2
+# Notebook code uses the rpy2 3.6 Converter.context() API.
+rpy2==3.6.7
 
 # repseq is installed from a fixed GitHub commit whose pyproject.toml
 # correctly exposes the repseq package and its runtime dependencies.

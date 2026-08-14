@@ -1,0 +1,54 @@
+name: Patch README rpy2 notes
+
+on:
+  push:
+    branches:
+      - reproducible-article-environment
+
+permissions:
+  contents: write
+
+jobs:
+  patch-readme:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reproducible-article-environment
+      - name: Update README
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('README.md')
+          s = p.read_text(encoding='utf-8')
+
+          old = ('Важно: старый `kernelspec` внутри metadata исходного notebook может содержать историческое имя окружения. '
+                 'Для headless-воспроизведения это не используется: параметр `--ExecutePreprocessor.kernel_name=python3` '
+                 'явно выбирает kernel текущего канонического окружения и не требует пользовательской регистрации kernelspec.')
+          new = ('`venn_original.ipynb` уже содержит portable kernelspec `python3`; пользовательская регистрация kernel не требуется. '
+                 'Для headless-воспроизведения параметр `--ExecutePreprocessor.kernel_name=python3` оставлен явно, чтобы запуск не зависел от metadata старых локальных копий notebook.')
+          s = s.replace(old, new)
+
+          marker = ('Фиксация SHA принципиальна: она делает источник `repseq` однозначным и не позволяет будущим изменениям ветки `main` незаметно менять результаты анализа.\n')
+          addition = ('\n`rpy2` закреплён на версии **3.6.7**. В `venn_original.ipynb` используется актуальный локальный '
+                      '`(default_converter + pandas2ri.converter).context()` вместо удалённого `pandas2ri.activate()`.\n')
+          if addition.strip() not in s:
+              s = s.replace(marker, marker + addition)
+
+          s = s.replace(
+              'Python 3.12.13, mirpy-lib 3.4.0, numpy 2.5.1, pandas 3.0.3, polars 1.43.0, scipy 1.18.0, scikit-learn 1.9.0, Matplotlib 3.10.1; `repseq` закреплён на Git commit',
+              'Python 3.12.13, mirpy-lib 3.4.0, numpy 2.5.1, pandas 3.0.3, polars 1.43.0, scipy 1.18.0, scikit-learn 1.9.0, Matplotlib 3.10.1, rpy2 3.6.7; `repseq` закреплён на Git commit'
+          )
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit README patch
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md
+          git commit -m 'Document rpy2 3.6 conversion and portable kernel'
+          git push origin HEAD:reproducible-article-environment

@@ -42,8 +42,10 @@ dependencies:
   - ipython
 
   # R bridge and Bioconductor differential-expression packages.
+  # rpy2 3.6 removed pandas2ri.activate(); venn_original.ipynb uses the
+  # supported local Converter.context() API and is pinned to this tested series.
   - r-base
-  - rpy2
+  - rpy2=3.6.7
   - bioconductor-edger
   - bioconductor-deseq2
 

@@ -1,0 +1,115 @@
+name: Finalize parallel notebook patch
+
+on:
+  push:
+    branches:
+      - reproducible-article-environment
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reproducible-article-environment
+
+      - name: Fix remaining portable execution blockers and validate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+
+          def load(path):
+              return json.loads(Path(path).read_text(encoding='utf-8'))
+          def text(cell):
+              s = cell.get('source', '')
+              return ''.join(s) if isinstance(s, list) else s
+          def put(cell, s):
+              old = cell.get('source', '')
+              cell['source'] = s.splitlines(keepends=True) if isinstance(old, list) else s
+          def cell(nb, cid):
+              return next(c for c in nb['cells'] if c.get('id') == cid)
+          def save(path, nb):
+              Path(path).write_text(json.dumps(nb, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
+
+          # mirpy: motif section accidentally indexed EnrichmentResult `enr` rather than the
+          # enriched DataFrame.  This is an execution bug only; use the already-computed exact
+          # enriched rows without changing filtering or ranking.
+          p = 'mirpy_analysis.ipynb'
+          nb = load(p)
+          c = cell(nb, '205e3630')
+          s = text(c)
+          s = s.replace('sub=enr[enr["v_gene"].isin(topv)]',
+                        'sub=enriched[enriched["v_gene"].isin(topv)].copy()')
+          put(c, s)
+          save(p, nb)
+
+          # Study2 can be opened either from repository root or from its own directory.
+          # Resolve article_runtime relative to the notebook without any user-specific path.
+          p = 'study2_alloreactivity/alloreactivity_study.ipynb'
+          nb = load(p)
+          c = cell(nb, '386b65e3')
+          s = text(c)
+          old = ('import os, sys, warnings, pickle\n'
+                 'from article_runtime import configure_runtime\n')
+          new = ('import os, sys, warnings, pickle\n'
+                 'from pathlib import Path\n'
+                 '_cwd = Path.cwd().resolve()\n'
+                 'if not (_cwd / "article_runtime.py").exists() and (_cwd.parent / "article_runtime.py").exists():\n'
+                 '    sys.path.insert(0, str(_cwd.parent))\n'
+                 'from article_runtime import configure_runtime\n')
+          if old in s:
+              s = s.replace(old, new, 1)
+          put(c, s)
+          save(p, nb)
+
+          # Structural validation.  Parse ordinary Python cells; skip IPython magic/shell cells.
+          for p in ['venn_original.ipynb', 'mirpy_analysis.ipynb',
+                    'study2_alloreactivity/alloreactivity_study.ipynb', 'results_summary.ipynb']:
+              nb = load(p)
+              assert nb.get('metadata', {}).get('kernelspec', {}).get('name') in ('python3', 'conda-env-.conda-main_repseq-py', 'mirpy')
+              for i, c in enumerate(nb['cells']):
+                  if c.get('cell_type') != 'code':
+                      continue
+                  s = text(c)
+                  ordinary = '\n'.join(line for line in s.splitlines()
+                                       if not line.lstrip().startswith(('%', '!')))
+                  if ordinary.strip():
+                      try:
+                          ast.parse(ordinary)
+                      except SyntaxError as e:
+                          raise SyntaxError(f'{p}: code cell {i} id={c.get("id")}: {e}') from e
+
+          mir = Path('mirpy_analysis.ipynb').read_text(encoding='utf-8')
+          st2 = Path('study2_alloreactivity/alloreactivity_study.ipynb').read_text(encoding='utf-8')
+          venn = Path('venn_original.ipynb').read_text(encoding='utf-8')
+          assert 'pandas2ri.activate()' not in venn
+          assert 'REPSEQ_PATH' not in venn
+          assert 'configure_repseq_parallelism(N_WORKERS)' in venn
+          assert 'permanova_parallel as permanova' in mir
+          assert 'threads=0' not in mir
+          assert 'sub=enr[enr[' not in mir
+          assert 'mirpy_density_basis.joblib' in mir
+          assert 'configure_repseq_parallelism(N_WORKERS)' in st2
+          assert 'parallel_map(_hill_one' in st2
+          print('Parallel notebook structural validation OK')
+          PY
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          if git diff --quiet -- mirpy_analysis.ipynb study2_alloreactivity/alloreactivity_study.ipynb; then
+            echo 'No additional fixes needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mirpy_analysis.ipynb study2_alloreactivity/alloreactivity_study.ipynb
+          git commit -m 'Finalize safe parallel notebook execution'
+          git push origin HEAD:reproducible-article-environment

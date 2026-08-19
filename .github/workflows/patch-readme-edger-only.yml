@@ -1,0 +1,45 @@
+name: Patch README after DESeq2 removal
+
+on:
+  push:
+    branches:
+      - reproducible-article-environment
+    paths:
+      - .github/workflows/patch-readme-edger-only.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reproducible-article-environment
+          fetch-depth: 0
+
+      - name: Update README
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('README.md')
+          s = p.read_text()
+          s = s.replace('Venn + edgeR/DESeq2/Fisher (TRA/TRB)', 'Venn + edgeR/Fisher (TRA/TRB)')
+          s = s.replace('счётный дифференциальный анализ (edgeR, DESeq2, точный тест Фишера)', 'счётный дифференциальный анализ (edgeR, точный тест Фишера)')
+          s = s.replace('Bioconductor `edgeR`/`DESeq2`', 'Bioconductor `edgeR`')
+          s = s.replace('print("DESeq2:", isinstalled("DESeq2"))\n', '')
+          s = s.replace('assert isinstalled("DESeq2")\n', '')
+          if 'DESeq2' in s:
+              raise SystemExit('Unexpected DESeq2 reference remains in README')
+          p.write_text(s)
+          PY
+
+      - name: Commit README and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-readme-edger-only.yml
+          git add README.md
+          git commit -m "Document edgeR-only differential analysis"
+          git push origin reproducible-article-environment

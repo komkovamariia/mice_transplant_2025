@@ -92,9 +92,22 @@ def _validate_required_files() -> None:
         fail(f"missing required files: {missing}")
     if (ROOT / "RUN_GUIDE_RU.md").exists():
         fail("legacy Russian execution guide remains in the active tree")
-    if (ROOT / "approaches").exists():
+    legacy_root = ROOT / "approaches"
+    legacy_sources = []
+    if legacy_root.exists():
+        legacy_sources = sorted(
+            path.relative_to(ROOT)
+            for path in legacy_root.rglob("*")
+            if path.is_file()
+            and path.suffix.lower() in {".ipynb", ".md", ".py"}
+            and ".ipynb_checkpoints" not in path.parts
+            and "__pycache__" not in path.parts
+        )
+    if legacy_sources:
+        rendered = ", ".join(str(path) for path in legacy_sources)
         fail(
-            "legacy approaches/ directory remains; source notebooks belong in notebooks/"
+            "legacy source files remain under approaches/; move them to notebooks/ "
+            f"or remove them: {rendered}"
         )
 
 

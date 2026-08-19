@@ -3,7 +3,6 @@ name: mice-transplant-2025
 channels:
   - conda-forge
   - bioconda
-
 dependencies:
   # Reproducibility pins used by the article notebooks.
   - python=3.12.13
@@ -42,13 +41,12 @@ dependencies:
   - nbformat=5.10.4
   - ipython
 
-  # R bridge and Bioconductor differential-expression packages.
+  # R bridge and Bioconductor package used for differential count analysis.
   # rpy2 3.6 removed pandas2ri.activate(); venn_original.ipynb uses the
   # supported local Converter.context() API and is pinned to this tested series.
   - r-base
   - rpy2=3.6.7
   - bioconductor-edger
-  - bioconductor-deseq2
 
   # Packages distributed through PyPI or a pinned Git revision.
   - pip:

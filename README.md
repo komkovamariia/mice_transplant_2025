@@ -23,7 +23,7 @@
 ## Структура репозитория
 
 ```text
-├── venn_original.ipynb        # Исходный анализ: Venn + edgeR/DESeq2/Fisher (TRA/TRB)
+├── venn_original.ipynb        # Исходный анализ: Venn + edgeR/Fisher (TRA/TRB)
 ├── mirpy_analysis.ipynb       # Вложение, плотность, мотивы, MMD и robustness
 ├── results_summary.ipynb      # Сводное сравнение подходов
 ├── study2_alloreactivity/     # Независимый анализ аллореактивных клонотипов
@@ -38,7 +38,7 @@
 
 | Тетрадь | Содержание |
 |---|---|
-| **`venn_original.ipynb`** | Первичный анализ, положенный в основу статьи: клонотип = `(CDR3, V)`, диаграммы Венна пересечений групп, локализация V-сегментов в области «только g1», счётный дифференциальный анализ (edgeR, DESeq2, точный тест Фишера), консенсусные клонотипы. |
+| **`venn_original.ipynb`** | Первичный анализ, положенный в основу статьи: клонотип = `(CDR3, V)`, диаграммы Венна пересечений групп, локализация V-сегментов в области «только g1», счётный дифференциальный анализ (edgeR, точный тест Фишера), консенсусные клонотипы. |
 | **`mirpy_analysis.ipynb`** | Независимая проверка и расширение: единый базис вложения по объединённому пулу, плотностный анализ обогащения (g1 vs g5+g6), конвергентные мотивы CDR3, репертуарные отпечатки Φ(S) и матрица MMD с PERMANOVA, witness-анализ, расширенные биологические контрасты, проверка устойчивости на клонотипах aaVJ, согласование трёх линий. |
 | **`results_summary.ipynb`** | Высокоуровневая сводка: читает готовые таблицы результатов и воспроизводит ключевые выводы без повторного тяжёлого вычисления вложения. |
 
@@ -59,7 +59,7 @@
 
 ## Воспроизводимое окружение
 
-Для статьи каноническим является **`environment.yml`**. Он устанавливает Python-стек, Jupyter, `ipykernel`, R/rpy2, Bioconductor `edgeR`/`DESeq2`, `mirpy-lib` и `repseq`. Локальный checkout `~/soft/repseq`, ручной `PYTHONPATH`, отдельная установка `dill` и ручная регистрация Jupyter kernel не нужны.
+Для статьи каноническим является **`environment.yml`**. Он устанавливает Python-стек, Jupyter, `ipykernel`, R/rpy2, Bioconductor `edgeR`, `mirpy-lib` и `repseq`. Локальный checkout `~/soft/repseq`, ручной `PYTHONPATH`, отдельная установка `dill` и ручная регистрация Jupyter kernel не нужны.
 
 `repseq` устанавливается непосредственно из GitHub с фиксированного коммита:
 
@@ -108,10 +108,8 @@ import mirpy
 print("python:", sys.executable)
 print("repseq:", repseq.__file__)
 print("edgeR:", isinstalled("edgeR"))
-print("DESeq2:", isinstalled("DESeq2"))
 assert hasattr(repseq, "__path__"), "repseq must be a package, not src/repseq.py"
 assert isinstalled("edgeR")
-assert isinstalled("DESeq2")
 print("Environment OK")
 PY
 ```

@@ -6,6 +6,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +58,21 @@ def fail(message: str) -> None:
 
 
 def _active_files():
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        candidates = ROOT.rglob("*")
+    else:
+        candidates = (
+            ROOT / relative
+            for relative in completed.stdout.decode("utf-8").split("\0")
+            if relative
+        )
+
     excluded_roots = {
         ".git",
         "data",
@@ -64,11 +80,20 @@ def _active_files():
         "results",
         "project_sources",
     }
-    for path in ROOT.rglob("*"):
+    excluded_parts = {
+        ".ipynb_checkpoints",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        "__pycache__",
+    }
+    for path in candidates:
         if not path.is_file():
             continue
         relative = path.relative_to(ROOT)
         if relative.parts and relative.parts[0] in excluded_roots:
+            continue
+        if any(part in excluded_parts for part in relative.parts):
             continue
         yield path, relative
 
@@ -112,17 +137,21 @@ def _validate_required_files() -> None:
 
 
 def _validate_language_and_paths() -> None:
-    figure_roots = [
-        path
-        for path in ROOT.rglob("figures")
-        if path.is_dir() and path != ROOT / "figures"
-    ]
+    active_files = list(_active_files())
+    figure_roots = sorted(
+        {
+            Path(*relative.parts[: index + 1])
+            for _, relative in active_files
+            for index, part in enumerate(relative.parts[:-1])
+            if part == "figures" and index != 0
+        }
+    )
     if figure_roots:
         fail(
             "multiple figure roots remain: "
-            + ", ".join(str(path.relative_to(ROOT)) for path in figure_roots)
+            + ", ".join(str(path) for path in figure_roots)
         )
-    for path, relative in _active_files():
+    for path, relative in active_files:
         relative_text = relative.as_posix()
         if CYRILLIC.search(relative_text):
             fail(f"Cyrillic remains in an active path: {relative}")
@@ -135,10 +164,9 @@ def _validate_language_and_paths() -> None:
         if CYRILLIC.search(text):
             fail(f"Cyrillic text remains in active file: {relative}")
 
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in FIGURE_EXTENSIONS:
+    for path, relative in active_files:
+        if path.suffix.lower() not in FIGURE_EXTENSIONS:
             continue
-        relative = path.relative_to(ROOT)
         if not relative.parts or relative.parts[0] != "figures":
             fail(f"figure file is stored outside figures/: {relative}")
 

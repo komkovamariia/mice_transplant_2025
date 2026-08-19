@@ -1,201 +1,250 @@
-# TCR-репертуар при аллотрансплантации: воспроизведение и расширение методами вложения последовательностей
+# Mouse TCR repertoire analysis after allogeneic transplantation
 
-Реанализ репертуара α-цепи Т-клеточного рецептора в мышиной модели аллогенной трансплантации костного мозга (BALB/c → C57BL/6). Проект проверяет ранее опубликованные донор-реактивные V-сегменты тремя методологически независимыми линиями анализа и добавляет разрешение на уровне мотивов CDR3 и репертуарной геометрии с помощью библиотеки [mirpy](https://github.com/antigenomics/mirpy).
+This repository contains a reproducible, multi-approach analysis of mouse T-cell receptor repertoires in the BALB/c → C57BL/6 transplantation model. The computational design deliberately separates three analytical questions and reconciles them only after each method has produced an independent result.
 
-> *TCR repertoire in an allogeneic bone-marrow transplantation model (BALB/c → C57BL/6): reproduction of the published set-operation / count-based analysis and its extension with sequence-embedding methods (density enrichment, convergent CDR3 motifs, MMD repertoire geometry) from the mirpy toolkit.*
+## Analytical design
 
----
+| Stage | Directory | Question | Primary output |
+|---|---|---|---|
+| 1 | `approaches/01_set_count/` | Which exact aaV clonotypes and V segments differ by set membership and abundance? | edgeR/Fisher clonotype statistics and V-segment ranks |
+| 2 | `approaches/02_sequence_embedding/` | Which sequence-space neighborhoods and whole repertoires shift between g1 and allogeneic groups? | density enrichment, RFF-MMD, PERMANOVA, witness ranks |
+| 3 | `approaches/03_clone_alloreactivity/` | Which individual clonotypes are repeatedly supported by independent allogeneic prevalence, abundance, and convergence signals? | clone-level candidate table and V-segment ranks |
+| 4 | `approaches/04_cross_approach/` | Which V-segment signals are stable across methods and biological compartments? | per-stratum concordance and consensus ranks |
 
-## Основной результат
+The analyses are performed independently for six prespecified biological strata:
 
-Три независимых подхода — операции над множествами клонотипов, дифференциальный счётный анализ и плотностное вложение последовательностей — **согласованно подтверждают** опубликованные приоритетные V-сегменты:
+`cd4_thymus`, `cd4_spleen`, `cd8_thymus`, `cd8_spleen`, `cd4_combined`, and `cd8_combined`.
 
-- **TRAV4-2** — единственный кандидат, занимающий верхние позиции во всех трёх линиях: первое место по плотностному анализу, 4-й ранг по счётному анализу (edgeR) и заметное представительство в witness-анализе;
-- **4 из 5** кандидатов статьи (TRAV4-2, TRAV7D-3, TRAV7D-5, TRAV9-4) подтверждены обеими линиями mirpy;
-- **TRAV13-1** переопределён как признак аллоответа (обеднён в g1 по обилию) — расхождение содержательно объяснимо и уточняет биологию, а не опровергает её;
-- **TRAV6-6**, отнесённый исходной работой к неоднородному фону, на уровне мотивов оказывается наиболее конвергентным (`CALGDMATGGNNKLTF`);
-- **устойчивость:** включение J-сегмента не меняет ранжирование V-сегментов (ρ Спирмена = 0,93; лишь 0,11% клонотипов расщепляются по J).
+The two combined strata contain thymus and spleen samples of the indicated T-cell subset. They do not pool CD4 and CD8 cells.
 
-По репертуарной геометрии (MMD до интактного базиса g1): сингенный перенос почти не смещает репертуар (0,069, сопоставимо с внутригрупповой изменчивостью 0,074), тогда как аллогенный перенос смещает его на межлинейное расстояние (g5: 0,134; g6: 0,132).
-
----
-
-## Структура репозитория
+## Repository layout
 
 ```text
-├── venn_original.ipynb        # Исходный анализ: Venn + edgeR/Fisher (TRA/TRB)
-├── mirpy_analysis.ipynb       # Вложение, плотность, мотивы, MMD и robustness
-├── results_summary.ipynb      # Сводное сравнение подходов
-├── study2_alloreactivity/     # Независимый анализ аллореактивных клонотипов
-├── методология_mirpy.docx     # Методология и интерпретация
-├── results_tables.xlsx        # Агрегированные таблицы
-├── figures/                   # Публикационные рисунки
-├── requirements.txt           # Python-only зависимости
-└── environment.yml            # Каноническое полное окружение статьи
+.
+├── approaches/
+│   ├── 01_set_count/
+│   │   ├── README.md
+│   │   └── set_count_analysis.ipynb
+│   ├── 02_sequence_embedding/
+│   │   ├── README.md
+│   │   └── sequence_embedding_analysis.ipynb
+│   ├── 03_clone_alloreactivity/
+│   │   ├── README.md
+│   │   └── clone_alloreactivity_analysis.ipynb
+│   └── 04_cross_approach/
+│       ├── README.md
+│       └── cross_approach_comparison.ipynb
+├── src/                         # Shared analysis code
+├── scripts/
+│   ├── run_analysis.py          # Cell-aware execution driver
+│   └── validate_repository.py   # Static repository checks
+├── figures/
+│   ├── 01_set_count/
+│   ├── 02_sequence_embedding/
+│   ├── 03_clone_alloreactivity/
+│   └── 04_cross_approach/
+├── outputs/
+│   ├── tables/
+│   ├── notebooks/
+│   ├── logs/
+│   └── cache/
+├── docs/
+│   └── parallel_execution.md
+├── supplementary/
+├── environment.yml
+├── requirements.txt
+└── RUN_GUIDE_RU.md
 ```
 
-### Тетради
+All generated figures are written to the single `figures/` hierarchy. Every plotting routine writes both a 300-dpi PNG and a vector PDF. Notebook-only figures are not used as the sole copy of a result.
 
-| Тетрадь | Содержание |
-|---|---|
-| **`venn_original.ipynb`** | Первичный анализ, положенный в основу статьи: клонотип = `(CDR3, V)`, диаграммы Венна пересечений групп, локализация V-сегментов в области «только g1», счётный дифференциальный анализ (edgeR, точный тест Фишера), консенсусные клонотипы. |
-| **`mirpy_analysis.ipynb`** | Независимая проверка и расширение: единый базис вложения по объединённому пулу, плотностный анализ обогащения (g1 vs g5+g6), конвергентные мотивы CDR3, репертуарные отпечатки Φ(S) и матрица MMD с PERMANOVA, witness-анализ, расширенные биологические контрасты, проверка устойчивости на клонотипах aaVJ, согласование трёх линий. |
-| **`results_summary.ipynb`** | Высокоуровневая сводка: читает готовые таблицы результатов и воспроизводит ключевые выводы без повторного тяжёлого вычисления вложения. |
+## Input data
 
----
-
-## Группы
-
-| Группа | Описание |
-|---|---|
-| g1 | Интактные реципиенты BALB/c (целевая группа) |
-| g2 | Доноры C57BL/6 |
-| g3 | Сингенный перенос костного мозга |
-| g4 | Контроль кондиционирования |
-| g5 | Аллогенный перенос костного мозга |
-| g6 | Аллогенный перенос костного мозга + тимус донора |
-
----
-
-## Воспроизводимое окружение
-
-Для статьи каноническим является **`environment.yml`**. Он устанавливает Python-стек, Jupyter, `ipykernel`, R/rpy2, Bioconductor `edgeR`, `mirpy-lib` и `repseq`. Локальный checkout `~/soft/repseq`, ручной `PYTHONPATH`, отдельная установка `dill` и ручная регистрация Jupyter kernel не нужны.
-
-`repseq` устанавливается непосредственно из GitHub с фиксированного коммита:
+The canonical input is a sample-resolved aaV clonotype table:
 
 ```text
-https://github.com/mmjmike/repseq.git@1c464120ac0675608178608af531f90fcba17deb
+data/clean_clonotypes_aaV.parquet
 ```
 
-Фиксация SHA принципиальна: она делает источник `repseq` однозначным и не позволяет будущим изменениям ветки `main` незаметно менять результаты анализа.
+The minimum required columns are:
 
-`rpy2` закреплён на версии **3.6.7**. В `venn_original.ipynb` используется актуальный локальный `(default_converter + pandas2ri.converter).context()` вместо удалённого `pandas2ri.activate()`.
+```text
+cdr3, v_gene, umi, group, sample_id, mouse_id, source, subtype
+```
 
-### Чистая установка
+`v_germ` and `treatment` are used when available. The code derives CD4/CD8 identity from `subtype` with `sample_id` as a fallback, and derives thymus/spleen identity from `source` with `sample_id` as a fallback. Samples that cannot be assigned unambiguously are not silently inserted into a stratum.
+
+The input location can be changed without editing a notebook:
 
 ```bash
-git clone https://github.com/komkovamariia/mice_transplant_2025.git
-cd mice_transplant_2025
+export MICE_TCR_DATA_DIR=/path/to/data
+```
 
+or:
+
+```bash
+export MICE_TCR_CLEAN_PARQUET=/path/to/clean_clonotypes_aaV.parquet
+```
+
+Primary sequencing data are not embedded in this repository. A clean execution therefore requires the canonical sample-resolved input table.
+
+## Environment
+
+Create the complete Python/R environment:
+
+```bash
 conda env create -f environment.yml
 conda activate mice-transplant-2025
 ```
 
-Никакой `python -m ipykernel install --user` после создания окружения выполнять не требуется. Пакет `ipykernel`, установленный в самом окружении, предоставляет локальный kernelspec `python3` в `${CONDA_PREFIX}/share/jupyter/kernels/python3`. Все воспроизводимые команды ниже запускают именно этот kernel.
-
-Для уже созданного окружения после изменения `environment.yml`:
+Update an existing environment:
 
 ```bash
 conda env update -n mice-transplant-2025 -f environment.yml --prune
 conda activate mice-transplant-2025
 ```
 
-### Проверка установки перед расчётами
+The count-based model uses edgeR through rpy2. DESeq2 is not part of the active pipeline. `repseq` is installed from a fixed Git commit, and the runtime uses the CPU allocation visible to the current process rather than the physical-node core count.
+
+Validate the repository before a long run:
 
 ```bash
-python - <<'PY'
-import sys
-import repseq
-from repseq import clone_filter, clonosets, clustering, diffexp, intersections
-from repseq import io, logo, mixcr, slurm, stats, vdjtools
-import dill
-import matplotlib_venn
-from adjustText import adjust_text
-import rpy2.robjects as ro
-from rpy2.robjects.packages import isinstalled
-import mirpy
-
-print("python:", sys.executable)
-print("repseq:", repseq.__file__)
-print("edgeR:", isinstalled("edgeR"))
-assert hasattr(repseq, "__path__"), "repseq must be a package, not src/repseq.py"
-assert isinstalled("edgeR")
-print("Environment OK")
-PY
+python scripts/validate_repository.py
 ```
 
-Нормальный путь `repseq` должен вести в установленный package внутри окружения, а не в локальный файл `src/repseq.py`.
+## Running the analyses
 
-Проверить встроенный kernel можно без регистрации в пользовательском Jupyter:
+The recommended interface is `scripts/run_analysis.py`. It executes notebooks cell by cell, writes a durable executed-notebook checkpoint after every successful code cell, and appends progress to `outputs/logs/`.
+
+Run Approach 1 only:
 
 ```bash
-jupyter kernelspec list
+python scripts/run_analysis.py --approach 1
 ```
 
-При активном `mice-transplant-2025` среди доступных kernelspec должен быть `python3`, находящийся внутри текущего conda environment.
-
-### Python-only установка
-
-`requirements.txt` оставлен для задач, которым не нужны R/Bioconductor-блоки. Для полного запуска `venn_original.ipynb` используйте `environment.yml`.
+Run Approach 2 only:
 
 ```bash
-python -m pip install -r requirements.txt
+python scripts/run_analysis.py --approach 2
 ```
 
-### Данные
-
-Поместите исходные счётные матрицы и подготовленный `clean_clonotypes_aaV.parquet` в `data/` либо задайте путь через переменную окружения:
+Run Approach 3 only:
 
 ```bash
-export MIRPY_DATA_DIR=/path/to/data
+python scripts/run_analysis.py --approach 3
 ```
 
-### Порядок запуска
-
-1. `venn_original.ipynb`
-2. `mirpy_analysis.ipynb`
-3. `results_summary.ipynb`
-
-Для серверного воспроизводимого запуска первой тетради после `conda activate mice-transplant-2025`:
+Run the cross-approach comparison after all three upstream approaches:
 
 ```bash
-mkdir -p audit_runs logs
-jupyter nbconvert \
-  --to notebook \
-  --execute venn_original.ipynb \
-  --ExecutePreprocessor.kernel_name=python3 \
-  --ExecutePreprocessor.timeout=-1 \
-  --output-dir audit_runs \
-  --output 01_venn_original.executed.ipynb \
-  2>&1 | tee logs/01_venn_original.log
+python scripts/run_analysis.py --approach 4
 ```
 
-Альтернатива, которая вообще не зависит от того, какое окружение активно в текущем shell:
+Run the complete pipeline in publication order:
 
 ```bash
-conda run -n mice-transplant-2025 jupyter nbconvert \
-  --to notebook \
-  --execute venn_original.ipynb \
-  --ExecutePreprocessor.kernel_name=python3 \
-  --ExecutePreprocessor.timeout=-1 \
-  --output-dir audit_runs \
-  --output 01_venn_original.executed.ipynb
+python scripts/run_analysis.py --approach all
 ```
 
-`venn_original.ipynb` уже содержит portable kernelspec `python3`; пользовательская регистрация kernel не требуется. Для headless-воспроизведения параметр `--ExecutePreprocessor.kernel_name=python3` оставлен явно, чтобы запуск не зависел от metadata старых локальных копий notebook.
+Run more than one selected approach:
 
-`mirpy_analysis.ipynb` содержит наиболее тяжёлый этап; для него требуется существенно больше оперативной памяти, чем для сводной тетради.
+```bash
+python scripts/run_analysis.py --approach 1,2
+```
 
----
+Run only selected biological strata:
 
-## Почему Matplotlib закреплён на 3.10.1
+```bash
+python scripts/run_analysis.py \
+  --approach 2 \
+  --strata cd4_thymus,cd8_thymus
+```
 
-Исходный `venn_original.ipynb` использует исторический вызов `plt.boxplot(..., labels=...)`. В Matplotlib 3.11 аргумент `labels` удалён в пользу `tick_labels`, поэтому без фиксации версии старый исходный notebook падает с `TypeError`. Для воспроизведения исходного кода окружение статьи закрепляет Matplotlib 3.10.1.
+Specify the data directory on the command line:
 
----
+```bash
+python scripts/run_analysis.py \
+  --approach all \
+  --data-dir /path/to/data
+```
 
-## Доступность данных
+### Resume after a failed long run
 
-Первичные данные секвенирования получены в рамках исходного исследования. Подготовленные клонотипические таблицы и промежуточные артефакты, необходимые для воспроизведения, предоставляются по запросу / размещаются согласно требованиям исходной публикации. Настоящий репозиторий содержит код, агрегированные таблицы результатов и рисунки.
+The execution driver checkpoints completed code-cell IDs and all upstream tables/figures. To resume:
 
-## Ключевые версии
+```bash
+python scripts/run_analysis.py --approach 2 --resume
+```
 
-Python 3.12.13, mirpy-lib 3.4.0, numpy 2.5.1, pandas 3.0.3, polars 1.43.0, scipy 1.18.0, scikit-learn 1.9.0, Matplotlib 3.10.1, rpy2 3.6.7; `repseq` закреплён на Git commit `1c464120ac0675608178608af531f90fcba17deb`. Полный набор зависимостей указан в `environment.yml`.
+Bootstrap cells are always re-executed to recreate Python state. Completed analytical cells are skipped only when they are present in the checkpoint. Approach 2 also caches the shared embedding basis under `outputs/cache/02_sequence_embedding/`, so a restart does not require refitting the global sequence-space basis when the canonical clonotype set is unchanged.
 
----
+### Live progress
 
-## Исследование 2 — Поиск аллореактивных клонов (mirpy)
+A log line is written when every code cell starts and completes, including the number of cells remaining. Long-running cells emit a heartbeat every 30 seconds. Follow the current analysis with:
 
-Второй, независимый анализ того же набора данных, целиком на инструментарии mirpy / repseq. Многосигнальный конвейер поиска аллореактивных клонотипов α-цепи TCR: профили разнообразия (числа Хилла), биофизическая сигнатура CDR3, сеть сходства и конвергентные кластеры, вероятность генерации (OLGA), публичные клоны и структура компартментов, аннотация VDJdb. Независимо воспроизводит ранжирование V-сегментов Исследования 1 (ρ Спирмена = 1,00) и расширяет его до уровня отдельных клонов.
+```bash
+tail -f outputs/logs/02_sequence_embedding.log
+```
 
-См. каталог [`study2_alloreactivity/`](study2_alloreactivity/) — ноутбук, рукопись, таблицы результатов и рисунки.
+A typical sequence is:
+
+```text
+[CELL 003/009] START | 6 remaining after this cell
+[CELL 003/009] RUNNING | elapsed=300s
+[CELL 003/009] DONE in 412.7s | 6 code cell(s) not yet checkpointed
+```
+
+For scheduler-level CPU and memory monitoring, see `docs/parallel_execution.md`.
+
+## Outputs
+
+Each analytical approach writes stratum-specific tables to:
+
+```text
+outputs/tables/<approach>/
+```
+
+Each stratum produces a standardized V-segment ranking containing at least:
+
+```text
+v_gene, rank, score, stratum
+```
+
+Approach-specific evidence is retained in additional columns. This shared schema is the only input used by the cross-approach ranking layer.
+
+Figures are written to:
+
+```text
+figures/<approach>/<stratum>/
+```
+
+and the global cross-stratum figure is written to:
+
+```text
+figures/04_cross_approach/
+```
+
+Executed notebooks and progress logs are written to:
+
+```text
+outputs/notebooks/
+outputs/logs/
+```
+
+## Statistical interpretation
+
+Approach 1 uses exact aaV clonotypes and an edgeR quasi-likelihood model for g1 versus the allogeneic g5+g6 reference; Fisher's exact test is retained as an independent count-based cross-check.
+
+Approach 2 uses one shared TCREmp/PCA coordinate system, exact k-d-tree neighborhood enrichment, RFF-MMD repertoire distances, deterministic 9,999-permutation PERMANOVA, and witness scoring. The permutation schedule is generated before parallel execution, so the p-value does not depend on worker completion order.
+
+Approach 3 is a prioritization analysis rather than an antigen-specificity classifier. Its integrated score combines allogeneic mouse prevalence, allogeneic-to-g1 abundance shift, and same-V local CDR3 convergence. Sequence physicochemical descriptors are reported for interpretation but are not treated as direct evidence of alloreactivity.
+
+Approach 4 does not force agreement. It reports rank correlation, top-10 overlap, and a normalized consensus rank separately for each biological stratum. A robust biological signal is one that is reproduced across analytical lines and, ideally, across more than one compartment.
+
+Historical PERMANOVA values from the earlier notebook implementation must not be reused: the original helper ignored permuted labels. The active implementation in `src/runtime.py` performs the intended deterministic permutation test, and only regenerated p-values should be reported.
+
+## Reproducibility notes
+
+The exact mirpy density backend remains `kdtree`; no approximate-nearest-neighbor substitution is used. CPU parallelism is scheduler-aware and does not alter clonotype definitions, biological contrasts, FDR thresholds, or permutation schedules.
+
+The active repository contains only the current English computational workflow. Earlier notebook and manuscript variants remain available through Git history but are not part of the executable pipeline.

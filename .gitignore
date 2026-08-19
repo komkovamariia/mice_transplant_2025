@@ -1,12 +1,22 @@
-# Data (provided separately / by request)
+# Input data are supplied separately.
 data/
-*.parquet
-*.npy
-# Python
+
+# Generated analysis state.
+outputs/cache/*
+outputs/logs/*
+outputs/notebooks/*
+outputs/tables/*
+!outputs/cache/.gitkeep
+!outputs/logs/.gitkeep
+!outputs/notebooks/.gitkeep
+!outputs/tables/.gitkeep
+
+# Python/Jupyter artifacts.
 __pycache__/
-*.pyc
+*.py[cod]
 .ipynb_checkpoints/
+
+# Local environments and editor files.
+.env
 .venv/
-env/
-# OS
 .DS_Store

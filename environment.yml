@@ -3,17 +3,14 @@ name: mice-transplant-2025
 channels:
   - conda-forge
   - bioconda
+
 dependencies:
-  # Reproducibility pins used by the article notebooks.
   - python=3.12.13
   - pip>=25
   - setuptools>=77
   - wheel
   - git
 
-  # Main numerical and plotting stack.
-  # Matplotlib 3.10.1 is intentional: venn_original.ipynb uses the legacy
-  # boxplot(labels=...) API that was removed in Matplotlib 3.11.
   - numpy=2.5.1
   - pandas=3.0.3
   - polars=1.43.0
@@ -34,21 +31,17 @@ dependencies:
   - requests
   - tqdm
 
-  # Notebook execution.
   - jupyterlab
   - ipykernel
+  - nbclient
   - nbconvert
   - nbformat=5.10.4
   - ipython
 
-  # R bridge and Bioconductor package used for differential count analysis.
-  # rpy2 3.6 removed pandas2ri.activate(); venn_original.ipynb uses the
-  # supported local Converter.context() API and is pinned to this tested series.
   - r-base
   - rpy2=3.6.7
   - bioconductor-edger
 
-  # Packages distributed through PyPI or a pinned Git revision.
   - pip:
       - mirpy-lib==3.4.0
       - logomaker==0.8.7

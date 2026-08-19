@@ -1,0 +1,289 @@
+name: Patch article notebooks for safe all-core execution
+
+on:
+  push:
+    branches:
+      - reproducible-article-environment
+
+permissions:
+  contents: write
+
+jobs:
+  patch-notebooks:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reproducible-article-environment
+
+      - name: Patch notebooks
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          def cell_text(cell):
+              src = cell.get('source', '')
+              return ''.join(src) if isinstance(src, list) else src
+
+          def set_cell_text(cell, text):
+              src = cell.get('source', '')
+              cell['source'] = text.splitlines(keepends=True) if isinstance(src, list) else text
+
+          def get_cell(nb, cid):
+              for cell in nb['cells']:
+                  if cell.get('id') == cid:
+                      return cell
+              raise KeyError(cid)
+
+          def load_nb(path):
+              return json.loads(Path(path).read_text(encoding='utf-8'))
+
+          def save_nb(path, nb):
+              Path(path).write_text(json.dumps(nb, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # venn_original.ipynb: scheduler-aware native threads + repseq process pool.
+          # ------------------------------------------------------------------
+          path = 'venn_original.ipynb'
+          nb = load_nb(path)
+          c = get_cell(nb, '845d0107-76a5-427c-854d-e2b7cce6b558')
+          t = cell_text(c)
+          if 'from article_runtime import configure_runtime' not in t:
+              t = t.replace(
+                  'import os\nimport pandas as pd\n',
+                  'import os\nfrom article_runtime import configure_runtime\nN_WORKERS = configure_runtime()\n\nimport pandas as pd\n',
+                  1,
+              )
+          if 'configure_repseq_parallelism(N_WORKERS)' not in t:
+              t = t.replace(
+                  'from repseq import diffexp\n',
+                  'from repseq import diffexp\n\nfrom article_runtime import configure_repseq_parallelism\nconfigure_repseq_parallelism(N_WORKERS)\n',
+                  1,
+              )
+          set_cell_text(c, t)
+          nb.setdefault('metadata', {})['kernelspec'] = {
+              'display_name': 'Python 3 (ipykernel)', 'language': 'python', 'name': 'python3'
+          }
+          save_nb(path, nb)
+
+          # ------------------------------------------------------------------
+          # mirpy_analysis.ipynb
+          # ------------------------------------------------------------------
+          path = 'mirpy_analysis.ipynb'
+          nb = load_nb(path)
+
+          # Runtime must be configured before NumPy/Polars are imported.
+          c = get_cell(nb, '8e8466d5')
+          t = cell_text(c)
+          if 'from article_runtime import configure_runtime' not in t:
+              t = t.replace(
+                  'import os, sys, json, warnings, platform\n',
+                  'import os, sys, json, warnings, platform\nfrom article_runtime import configure_runtime\nN_WORKERS = configure_runtime()\n',
+                  1,
+              )
+          if 'print("CPU workers :' not in t:
+              t += '\nprint("CPU workers :", N_WORKERS)'
+          set_cell_text(c, t)
+
+          # Fix historical stringified os.path.join expressions everywhere.
+          filenames = [
+              'clean_clonotypes_aaV.parquet', 'union_meta.parquet', 'union_coords50.npy',
+              'ct_g1_aaVJ_tra.parquet', 'ct_g5_aaVJ_tra.parquet', 'ct_g6_aaVJ_tra.parquet',
+              'density_g1_vsegment_agg.csv',
+          ]
+          for cell in nb['cells']:
+              if cell.get('cell_type') != 'code':
+                  continue
+              t = cell_text(cell)
+              for fn in filenames:
+                  t = t.replace(f'"os.path.join(DATA_DIR, "{fn}")"', f'os.path.join(DATA_DIR, "{fn}")')
+                  t = t.replace(f"'os.path.join(DATA_DIR, \"{fn}\")'", f'os.path.join(DATA_DIR, "{fn}")')
+              t = t.replace('threads=0', 'threads=N_WORKERS')
+              set_cell_text(cell, t)
+
+          # Main embedding: all allocated cores internally, sequential RAM-bounded outer chunks,
+          # then persist the one common basis and coordinates for every downstream section.
+          c = get_cell(nb, '6f2c337b')
+          t = cell_text(c)
+          t = t.replace(
+              'def transform_chunked(space, df_pandas, chunk=60_000):\n    out = []\n',
+              'def transform_chunked(space, df_pandas, chunk=60_000):\n'
+              '    # Intentionally sequential across chunks: TCREmp itself uses N_WORKERS cores.\n'
+              '    # Parallel chunks would duplicate the large raw embedding buffers and oversubscribe CPUs.\n'
+              '    out = []\n',
+          )
+          marker = 'print(f"projected {COORDS.shape} in {time.time()-t0:.0f}s, {COORDS.nbytes/1e9:.2f}GB")\n'
+          persist = (
+              '\n# Cache the shared coordinate system once; all later sections reuse it.\n'
+              'os.makedirs(DATA_DIR, exist_ok=True)\n'
+              'uni.to_parquet(os.path.join(DATA_DIR, "union_meta.parquet"), index=False)\n'
+              'np.save(os.path.join(DATA_DIR, "union_coords50.npy"), COORDS)\n'
+              'from joblib import dump\n'
+              'dump({"scaler": scaler, "pca": pca}, os.path.join(DATA_DIR, "mirpy_density_basis.joblib"))\n'
+              'print("cached union coords + shared PCA basis")\n'
+          )
+          if 'mirpy_density_basis.joblib' not in t:
+              t = t.replace(marker, marker + persist, 1)
+          if 'density_g1_obs_full.parquet' not in t:
+              t = t.replace(
+                  'enriched = obs_df[(obs_df["qvalue"] < 0.05) & (obs_df["fold"] > 1)].copy()\n',
+                  'enriched = obs_df[(obs_df["qvalue"] < 0.05) & (obs_df["fold"] > 1)].copy()\n'
+                  'obs_df.to_parquet("density_g1_obs_full.parquet", index=False)\n',
+                  1,
+              )
+          if 'os.path.join(DATA_DIR, "density_g1_vsegment_agg.csv")' not in t:
+              t = t.replace(
+                  'vagg.to_csv("density_g1_vsegment_agg.csv", index=False)\n',
+                  'vagg.to_csv("density_g1_vsegment_agg.csv", index=False)\n'
+                  'vagg.to_csv(os.path.join(DATA_DIR, "density_g1_vsegment_agg.csv"), index=False)\n',
+                  1,
+              )
+          set_cell_text(c, t)
+
+          # Section 2.1: reuse the already calculated DataFrame instead of broken/duplicate work.
+          c = get_cell(nb, '6f2cec01')
+          set_cell_text(c, '''# The previous cell already computed the exact density result.\n# Reuse it here: no second neighbour search and no statistical changes.\nv_density = vagg.copy().reset_index(drop=True)\nv_density["rank"] = range(1, len(v_density) + 1)\nv_density.to_csv("density_g1_vsegment_agg.csv", index=False)\nv_density.to_csv(os.path.join(DATA_DIR, "density_g1_vsegment_agg.csv"), index=False)\nprint("Top 10 V-segments enriched in g1 (density):")\nprint(v_density.head(10)[["v_gene","n_enriched","median_fold","enrich_rate","rank"]].to_string(index=False))''')
+
+          # Section 4: load the exact shared scaler/PCA instead of re-embedding the same 60k rows.
+          c = get_cell(nb, 'b9f03df4')
+          t = cell_text(c)
+          old = '''rng = np.random.default_rng(0)\nfit_idx = rng.choice(len(uni), 60_000, replace=False)\nXfit = _embed(model, embed_frame(uni.iloc[fit_idx]), "full").astype(np.float32)\nscaler = StandardScaler().fit(Xfit)\npca = PCA(n_components=preset.n_components, random_state=0).fit(scaler.transform(Xfit))\nGLOBAL = DensitySpace(model=model, space="full", scaler=scaler, pca=pca)\ndel Xfit\ngc.collect()\n'''
+          new = '''from joblib import load\nbasis = load(os.path.join(DATA_DIR, "mirpy_density_basis.joblib"))\nscaler, pca = basis["scaler"], basis["pca"]\nGLOBAL = DensitySpace(model=model, space="full", scaler=scaler, pca=pca)\n'''
+          if old not in t:
+              raise RuntimeError('Section 4 shared-basis block not found')
+          t = t.replace(old, new, 1)
+          t = t.replace(
+              'length_scale = calibrate_radius(GLOBAL, seed=0)\n',
+              'length_scale = calibrate_radius(GLOBAL, seed=0)\n'
+              'np.save(os.path.join(DATA_DIR, "rff_length_scale.npy"), np.array([length_scale]))\n',
+              1,
+          )
+          set_cell_text(c, t)
+
+          # Correct and parallel deterministic PERMANOVA.  The old helper ignored its argument
+          # and therefore did not actually permute labels.
+          c = get_cell(nb, '0fe2bbc0')
+          t = cell_text(c)
+          start = t.index('from itertools import combinations')
+          load_pos = t.index('D = np.load("mmd_matrix.npy")')
+          prefix = '''from article_runtime import permanova_parallel as permanova\n\n# Permutations are generated deterministically once and evaluated in all allocated workers.\n# This is exact one-factor PERMANOVA; worker count cannot change the permutation schedule.\n\n'''
+          t = prefix + t[load_pos:]
+          set_cell_text(c, t)
+
+          # Section 5: reuse shared PCA basis + sample fingerprints instead of recomputing both.
+          c = get_cell(nb, 'cd5686fc')
+          t = cell_text(c)
+          old = '''rng = np.random.default_rng(0)\nfit_idx = rng.choice(len(uni), 60_000, replace=False)\nXfit = _embed(model, embed_frame(uni.iloc[fit_idx]), "full").astype(np.float32)\nscaler = StandardScaler().fit(Xfit)\npca = PCA(n_components=preset.n_components, random_state=0).fit(scaler.transform(Xfit))\nGLOBAL = DensitySpace(model=model, space="full", scaler=scaler, pca=pca)\ndel Xfit\ngc.collect()\n\nlength_scale = calibrate_radius(GLOBAL, seed=0)\nrff = _make_rff(preset.n_components, 2048, length_scale, 0)\n'''
+          new = '''from joblib import load\nbasis = load(os.path.join(DATA_DIR, "mirpy_density_basis.joblib"))\nscaler, pca = basis["scaler"], basis["pca"]\nGLOBAL = DensitySpace(model=model, space="full", scaler=scaler, pca=pca)\n\nls_path = os.path.join(DATA_DIR, "rff_length_scale.npy")\nlength_scale = float(np.load(ls_path)[0]) if os.path.exists(ls_path) else calibrate_radius(GLOBAL, seed=0)\nrff = _make_rff(preset.n_components, 2048, length_scale, 0)\n'''
+          if old not in t:
+              raise RuntimeError('Section 5 shared-basis block not found')
+          t = t.replace(old, new, 1)
+          block_start = t.index('CLEAN = pd.read_parquet(')
+          block_end = t.index('gmask = kept_meta["group"].values')
+          cached = '''means = np.load("sample_means.npy")\nneffs = np.load("sample_neff.npy")\ndivs = np.load("sample_div.npy")\nkept_meta = pd.read_csv("sample_meta.csv")\n'''
+          t = t[:block_start] + cached + t[block_end:]
+          set_cell_text(c, t)
+
+          # Section 6: the contrast operates on already cached reduced coordinates; the repeated
+          # TCREmp/PCA fit was unused by neighbor_enrichment and is removed entirely.
+          c = get_cell(nb, '19d13127')
+          t = cell_text(c)
+          start = t.index('preset = get_preset')
+          end = t.index('def run_contrast')
+          replacement = '''uni = pd.read_parquet(os.path.join(DATA_DIR, "union_meta.parquet"))\nCOORDS = np.load(os.path.join(DATA_DIR, "union_coords50.npy"))\n\n'''
+          t = t[:start] + replacement + t[end:]
+          set_cell_text(c, t)
+
+          nb.setdefault('metadata', {})['kernelspec'] = {
+              'display_name': 'Python 3 (ipykernel)', 'language': 'python', 'name': 'python3'
+          }
+          save_nb(path, nb)
+
+          # ------------------------------------------------------------------
+          # Study 2: repseq all-core pool + safe independent per-file Hill calculations.
+          # ------------------------------------------------------------------
+          path = 'study2_alloreactivity/alloreactivity_study.ipynb'
+          nb = load_nb(path)
+          c = get_cell(nb, '386b65e3')
+          t = cell_text(c)
+          if 'from article_runtime import configure_runtime' not in t:
+              t = t.replace(
+                  'import os, sys, warnings, pickle\n',
+                  'import os, sys, warnings, pickle\n'
+                  'from article_runtime import configure_runtime\n'
+                  'N_WORKERS = configure_runtime()\n',
+                  1,
+              )
+          if 'configure_repseq_parallelism(N_WORKERS)' not in t:
+              t = t.replace(
+                  'from repseq.io import read_clonoset\n',
+                  'from repseq.io import read_clonoset\n'
+                  'from article_runtime import configure_repseq_parallelism\n'
+                  'configure_repseq_parallelism(N_WORKERS)\n',
+                  1,
+              )
+          set_cell_text(c, t)
+
+          c = get_cell(nb, 'ae53f728')
+          t = cell_text(c).replace(
+              'stats.calc_diversity_stats(clonosets, cl_filter=STD_FILTER, iterations=3)',
+              'stats.calc_diversity_stats(clonosets, cl_filter=STD_FILTER, iterations=3, seed=42)',
+          )
+          set_cell_text(c, t)
+
+          c = get_cell(nb, '75287ddd')
+          t = cell_text(c)
+          old = '''rows=[]\nfor _,r in clonosets.iterrows():\n    d=pd.read_csv(r['filename'], sep='\\t'); f=d['uniqueUMIfraction'].values\n    rows.append(dict(zip([f'q{q}' for q in QS], hill_numbers(f,QS)))|{'group':r['group']})\nhill=pd.DataFrame(rows)\n'''
+          new = '''from article_runtime import parallel_map\n\ndef _hill_one(r):\n    d = pd.read_csv(r['filename'], sep='\\t')\n    f = d['uniqueUMIfraction'].values\n    return dict(zip([f'q{q}' for q in QS], hill_numbers(f, QS))) | {'group': r['group']}\n\n# Independent files: thread-parallel I/O/NumPy, ordered result, no shared RNG.\nrows = parallel_map(_hill_one, clonosets.to_dict('records'), n_jobs=N_WORKERS, prefer='threads')\nhill=pd.DataFrame(rows)\n'''
+          if old not in t:
+              raise RuntimeError('Study2 Hill loop not found')
+          t = t.replace(old, new, 1)
+          set_cell_text(c, t)
+
+          # Clarify that the expensive clustering path, when regenerated, also uses the patched pool.
+          c = get_cell(nb, '30da4b32')
+          t = cell_text(c)
+          t = t.replace(
+              '# cl = clustering.Clusters.create_clusters(pooled_clonoset, mismatches=1, igh=False)\n',
+              '# When raw network regeneration is enabled, configure_repseq_parallelism() makes\n'
+              '# repseq clustering use every allocated CPU with one BLAS thread per worker.\n'
+              '# cl = clustering.Clusters.create_clusters(pooled_clonoset, mismatches=1, igh=False)\n',
+          )
+          set_cell_text(c, t)
+
+          nb.setdefault('metadata', {})['kernelspec'] = {
+              'display_name': 'Python 3 (ipykernel)', 'language': 'python', 'name': 'python3'
+          }
+          save_nb(path, nb)
+
+          # Assertions: no accidental scientific shortcuts / known execution blockers.
+          mir = Path('mirpy_analysis.ipynb').read_text(encoding='utf-8')
+          study2 = Path('study2_alloreactivity/alloreactivity_study.ipynb').read_text(encoding='utf-8')
+          venn = Path('venn_original.ipynb').read_text(encoding='utf-8')
+          assert 'threads=0' not in mir
+          assert 'permanova_parallel as permanova' in mir
+          assert 'mirpy_density_basis.joblib' in mir
+          assert 'ARTICLE_N_JOBS' not in mir  # override belongs in runtime helper, not scientific code
+          assert 'configure_repseq_parallelism(N_WORKERS)' in study2
+          assert 'parallel_map(_hill_one' in study2
+          assert 'configure_repseq_parallelism(N_WORKERS)' in venn
+          assert '"os.path.join(DATA_DIR' not in mir and "'os.path.join(DATA_DIR" not in mir
+          print('Notebook parallelization patch complete.')
+          PY
+
+      - name: Commit patched notebooks
+        shell: bash
+        run: |
+          if git diff --quiet -- venn_original.ipynb mirpy_analysis.ipynb study2_alloreactivity/alloreactivity_study.ipynb; then
+            echo 'No notebook changes.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add venn_original.ipynb mirpy_analysis.ipynb study2_alloreactivity/alloreactivity_study.ipynb
+          git commit -m 'Use allocated CPUs safely across article notebooks'
+          git push origin HEAD:reproducible-article-environment

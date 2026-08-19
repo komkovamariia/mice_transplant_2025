@@ -51,6 +51,7 @@ The combined strata pool thymus and spleen counts within each mouse. CD4 and CD8
 │   ├── logs/
 │   └── cache/
 ├── docs/
+│   └── notebook_input_provenance.md
 ├── environment.yml
 ├── requirements.txt
 └── RUN_GUIDE.md
@@ -58,37 +59,22 @@ The combined strata pool thymus and spleen counts within each mouse. CD4 and CD8
 
 Generated figures are saved as 300-dpi PNG and vector PDF files under `figures/<approach>/<stratum>/`. A plot that exists only inside an executed notebook is not considered a pipeline output.
 
-## Input
+## Notebook-specific inputs
 
-The canonical input is:
-
-```text
-data/clean_clonotypes_aaV.parquet
-```
-
-Required columns:
+The historical notebooks do not share one universal input file. The verified first pass, `venn_original.ipynb`, reads the existing project metadata and MiXCR clonoset index:
 
 ```text
-cdr3, v_gene, umi, group, sample_id, mouse_id, source, subtype
+/projects/mice_transplant_2025/metadata_mice_transplant.csv
+/projects/mice_transplant_2025/test_run/clonosets_mice_transplant_2025_df.csv
 ```
 
-Optional columns include `v_germ`, `treatment`, and `chain`. When `chain` is supplied, every active record must be annotated as TRA.
+The clonoset index contains the paths to the exported MiXCR clonotype tables under the project working directory. `repseq.intersections.count_table()` reads those tables and constructs the aaV matrices in memory. The first pass contains no `read_parquet()` call and does not require `clean_clonotypes_aaV.parquet`.
 
-Input validation rejects non-numeric or negative UMI counts, non-functional CDR3 amino-acid sequences, unresolved CD4/CD8 or tissue assignments, and inconsistent sample metadata. `subtype` and `source` are the primary annotation fields; `sample_id` is used only as a fallback.
+Parquet files occur in later reanalysis notebooks. In particular, the historical `mirpy_analysis.ipynb` uses a derived flattened table named `clean_clonotypes_aaV.parquet`, and later sections of Study 2 consume derived Parquet result layers. These are analysis artifacts rather than primary inputs to `venn_original.ipynb`.
 
-To use another data directory:
+The modular notebooks under `approaches/01_set_count`, `02_sequence_embedding`, and `03_clone_alloreactivity` currently call `src.strata.load_repertoire()` and therefore expect the derived flattened Parquet table. The repository does not yet provide a verified MiXCR-to-Parquet materialization command. The modular command must consequently be used only when this derived table has already been prepared; it must not replace the verified first-pass command below.
 
-```bash
-export MICE_TCR_DATA_DIR=/absolute/path/to/data
-```
-
-To specify the file directly:
-
-```bash
-export MICE_TCR_CLEAN_PARQUET=/absolute/path/clean_clonotypes_aaV.parquet
-```
-
-Primary sequencing data are supplied separately and are not stored in this repository.
+The complete notebook-by-notebook audit is recorded in [docs/notebook_input_provenance.md](docs/notebook_input_provenance.md).
 
 ## Environment
 
@@ -110,6 +96,34 @@ Approach 1 uses edgeR through rpy2. The active pipeline does not use DESeq2.
 
 ## Execution
 
+### Verified HPC first pass
+
+For the audit checkout that contains `venn_original.ipynb`, run Approach 1 exactly as follows:
+
+```bash
+mkdir -p audit_runs logs
+
+jupyter nbconvert \
+  --to notebook \
+  --execute venn_original.ipynb \
+  --ExecutePreprocessor.kernel_name=python3 \
+  --ExecutePreprocessor.timeout=-1 \
+  --output-dir audit_runs \
+  --output 01_venn_original.executed.ipynb \
+  2>&1 | tee logs/01_venn_original.log
+```
+
+This command uses the metadata CSV, the clonoset-index CSV, and the MiXCR exports referenced by that index. It does not use Parquet.
+
+The DESeq2-free historical notebook can be restored from repository history if it is absent from a clean checkout:
+
+```bash
+git show 6678766a0e8913ec2feacb3efb2daebd6a27eda4:venn_original.ipynb \
+  > venn_original.ipynb
+```
+
+### Modular pipeline
+
 Validate the repository first:
 
 ```bash
@@ -117,7 +131,7 @@ python scripts/validate_repository.py
 python -m pytest -q
 ```
 
-Run Approach 1:
+Run modular Approach 1 only when the derived `clean_clonotypes_aaV.parquet` table already exists:
 
 ```bash
 python scripts/run_analysis.py --approach 1
@@ -166,8 +180,10 @@ Pass the input directory explicitly:
 ```bash
 python scripts/run_analysis.py \
   --approach all \
-  --data-dir /absolute/path/to/data
+  --data-dir /absolute/path/to/derived_data
 ```
+
+This option points the modular runner to a directory containing the derived `clean_clonotypes_aaV.parquet`. It is unrelated to the existing `/projects/mice_transplant_2025/test_run/clonosets_mice_transplant_2025_df.csv` input used by the verified first pass.
 
 Resume a failed long run:
 

@@ -37,7 +37,7 @@ Approach 2 gives TCREmp the complete scheduler-aware CPU count. The expensive gl
 
 Approach 2 PERMANOVA uses `permanova_parallel()`. The complete permutation schedule is generated from a fixed seed in the parent process before worker dispatch. Worker completion order therefore cannot change the p-value.
 
-Approach 3 is dominated by pandas aggregation and CDR3-neighborhood indexing. Abundance is normalized within mouse, and the six biological strata are executed as separate notebook cells. This provides durable checkpoints without duplicating the canonical input table across multiple process pools.
+Approach 3 is dominated by pandas aggregation and CDR3-neighborhood indexing. Abundance is normalized within mouse, and the six biological strata are executed as separate notebook cells. This provides durable checkpoints without duplicating the derived sample-resolved repertoire table across multiple process pools.
 
 ## Memory
 

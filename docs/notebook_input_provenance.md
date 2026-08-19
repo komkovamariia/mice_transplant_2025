@@ -11,7 +11,7 @@ The input audit used the following sources:
 - the DESeq2-free `venn_original.ipynb` produced in commit `6678766a0e8913ec2feacb3efb2daebd6a27eda4`;
 - `mirpy_analysis.ipynb` and `results_summary.ipynb` from the original three-method study;
 - `study2_alloreactivity/alloreactivity_study.ipynb` from the original clone-level study;
-- the four modular notebooks under `approaches/`.
+- the four active source notebooks under `notebooks/`.
 
 ## Input map
 
@@ -22,8 +22,9 @@ The input audit used the following sources:
 | Historical `mirpy_analysis.ipynb` | Derived flattened clonotype tables including `clean_clonotypes_aaV.parquet` and aaVJ count tables | Parquet is a derived analysis format used by this notebook. It is not an input to the first pass. |
 | Historical `results_summary.ipynb` | CSV result tables produced by the upstream analyses | No primary repertoire input is read. |
 | Historical Study 2 notebook | `study2_data/clonosets_study2.csv`, repseq-compatible clonotype tables, and previously generated CSV/Parquet result layers | Several Parquet files are derived results consumed by later sections. |
-| Modular Approaches 1 to 3 | `clean_clonotypes_aaV.parquet` through `src.strata.load_repertoire()` | This interface was introduced by the modular refactor. |
-| Modular Approach 4 | Standardized tables produced by modular Approaches 1 to 3 | No repertoire file is read directly. |
+| Active Approach 1 | `metadata_mice_transplant.csv`, `clonosets_mice_transplant_2025_df.csv`, and its referenced MiXCR exports through `src.first_pass_input.load_first_pass_repertoire()` | No Parquet input is used. |
+| Active Approaches 2 and 3 | `clean_clonotypes_aaV.parquet` through `src.strata.load_repertoire()` | Parquet remains the later derived interface for sequence-space and clone-evidence analyses. |
+| Active Approach 4 | Standardized tables produced by active Approaches 1 to 3 | No repertoire file is read directly. |
 
 ## Verified first-pass data contract
 
@@ -39,13 +40,10 @@ The original first pass uses the following paths inside `venn_original.ipynb`:
 
 The raw FASTQ directory is used by `presenting_repseq.ipynb` when MiXCR outputs need to be regenerated. It is not read during a normal rerun of `venn_original.ipynb` when the MiXCR exports and clonoset index already exist.
 
-## Parquet limitation in the modular branch
+## Active first-pass implementation
 
-The modular notebooks currently call `load_repertoire()`, which expects `clean_clonotypes_aaV.parquet`. The repository does not currently contain a verified materialization command that creates this file from `clonosets_mice_transplant_2025_df.csv` and its MiXCR exports. Therefore:
+`python scripts/run_analysis.py --approach 1` now follows the verified CSV and MiXCR route directly. It reproduces the original chain-plus-sample-number metadata merge, applies the historical TRA sample exclusions, invokes `repseq.intersections.count_table()` in aaV mode with zero mismatches, and converts the in-memory count matrix to the shared sample-resolved interface. No minimum abundance threshold is applied. Empty, non-functional, and non-TRAV records are removed before statistical modeling.
 
-1. the Parquet file must not be presented as a prerequisite for the historical first pass;
-2. `python scripts/run_analysis.py --approach 1` is not equivalent to the verified `venn_original.ipynb` audit run unless that derived file has already been prepared;
-3. the original HPC command remains the verified route for rerunning the first pass from the existing project data;
-4. a future MiXCR-to-Parquet materialization step must preserve sample identifiers, mouse identifiers, group, tissue, CD4/CD8 subtype, chain, CDR3 amino-acid sequence, V segment, and UMI count before the modular runner is treated as a fresh-start workflow.
+## Remaining derived-data boundary
 
-This distinction prevents a derived cache format from being confused with the study's primary data source.
+Approaches 2 and 3 still require `clean_clonotypes_aaV.parquet`. The repository does not currently contain a verified materialization command that recreates this later derived table from the clonoset index. The Parquet requirement therefore applies only to those later methods. A future materialization step must preserve sample identifiers, mouse identifiers, group, tissue, CD4/CD8 subtype, chain, CDR3 amino-acid sequence, V segment, and abundance before the complete four-method workflow can be treated as a fresh-start pipeline.

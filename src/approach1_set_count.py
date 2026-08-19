@@ -1,4 +1,4 @@
-"""Approach 1: exact clonotype sets and count-based differential analysis."""
+"""Approach 1: exact aaV sets and count-based differential analysis."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib_venn import venn3
-from scipy.stats import fisher_exact
+from scipy.stats import fisher_exact, spearmanr
 from statsmodels.stats.multitest import multipletests
 
 from .figures import save_figure
@@ -23,10 +23,11 @@ from .strata import (
 )
 
 APPROACH = "01_set_count"
+FDR_THRESHOLD = 0.05
 
 
 def _output_dir() -> Path:
-    path = repository_root() / "outputs" / "tables" / APPROACH
+    path = repository_root() / "results" / APPROACH
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -117,10 +118,7 @@ def _fisher(counts: pd.DataFrame, groups: pd.Series) -> pd.DataFrame:
     for g1_count, allogeneic_count in zip(g1.values, allogeneic.values):
         table = [
             [g1_count, max(total_g1 - g1_count, 0)],
-            [
-                allogeneic_count,
-                max(total_allogeneic - allogeneic_count, 0),
-            ],
+            [allogeneic_count, max(total_allogeneic - allogeneic_count, 0)],
         ]
         odds_ratio, p_value = fisher_exact(table, alternative="two-sided")
         g1_frequency = (g1_count + 0.5) / (total_g1 + 1.0)
@@ -149,6 +147,19 @@ def _v_gene_from_feature(feature: pd.Series) -> pd.Series:
     return feature.astype(str).str.rsplit("|", n=1).str[-1]
 
 
+def _empty_panel(ax, message: str) -> None:
+    ax.axis("off")
+    ax.text(
+        0.5,
+        0.5,
+        message,
+        ha="center",
+        va="center",
+        transform=ax.transAxes,
+        wrap=True,
+    )
+
+
 def _plot_set_overlap(sets: dict[str, set[str]], stratum: str) -> None:
     fig, ax = plt.subplots(figsize=(7, 6))
     venn3(
@@ -157,48 +168,329 @@ def _plot_set_overlap(sets: dict[str, set[str]], stratum: str) -> None:
         ax=ax,
     )
     ax.set_title(f"Exact aaV clonotype overlap: {STRATUM_LABELS[stratum]}")
-    save_figure(fig, APPROACH, stratum, "exact_clonotype_overlap")
+    save_figure(fig, APPROACH, stratum, "01_exact_clonotype_overlap")
 
 
-def _plot_volcano(features: pd.DataFrame, stratum: str) -> None:
+def _plot_exclusive_trav(set_table: pd.DataFrame, stratum: str) -> None:
+    fig, ax = plt.subplots(figsize=(8, 6))
+    top = set_table.head(20).sort_values("n_g1_exclusive")
+    if top.empty:
+        _empty_panel(ax, "No g1-exclusive aaV clonotypes were observed.")
+    else:
+        ax.barh(top["v_gene"], top["n_g1_exclusive"], color="#4F6D7A")
+        ax.set_xlabel("g1-exclusive aaV clonotypes")
+        ax.set_ylabel("TRAV segment")
+    ax.set_title(f"TRAV usage among g1-exclusive clonotypes: {STRATUM_LABELS[stratum]}")
+    save_figure(fig, APPROACH, stratum, "02_g1_exclusive_trav_usage")
+
+
+def _volcano_data(features: pd.DataFrame) -> pd.DataFrame:
     data = (
         features.replace([np.inf, -np.inf], np.nan)
         .dropna(subset=["logFC", "FDR"])
         .copy()
     )
-    if data.empty:
-        return
-
     data["minus_log10_fdr"] = -np.log10(data["FDR"].clip(lower=np.finfo(float).tiny))
-    fig, ax = plt.subplots(figsize=(7.5, 5.5))
-    ax.scatter(
-        data["logFC"],
-        data["minus_log10_fdr"],
-        s=9,
-        alpha=0.55,
-    )
-    ax.axvline(0, linewidth=0.8)
-    ax.axhline(-np.log10(0.05), linewidth=0.8, linestyle="--")
-    ax.set_xlabel("edgeR log2 fold change: g1 / allogeneic")
-    ax.set_ylabel("-log10 FDR")
-    ax.set_title(f"Differential clonotype abundance: {STRATUM_LABELS[stratum]}")
-    save_figure(fig, APPROACH, stratum, "edger_volcano")
+    data["significant"] = data["FDR"].lt(FDR_THRESHOLD)
+    return data
 
 
-def _plot_ranking(ranking: pd.DataFrame, stratum: str) -> None:
-    top = ranking.head(15).sort_values(
-        ["n_edger_significant", "mean_effect_g1_vs_allogeneic"],
-        ascending=True,
-    )
-    if top.empty:
+def _draw_volcano(ax, data: pd.DataFrame) -> None:
+    if data.empty:
+        _empty_panel(ax, "No edgeR-tested aaV clonotypes were available.")
         return
+    colors = np.where(data["significant"], "#C44E52", "#A7A7A7")
+    ax.scatter(data["logFC"], data["minus_log10_fdr"], s=14, alpha=0.65, c=colors)
+    ax.axvline(1, linewidth=0.8, linestyle="--", color="black")
+    ax.axvline(-1, linewidth=0.8, linestyle="--", color="black")
+    ax.axhline(
+        -np.log10(FDR_THRESHOLD),
+        linewidth=0.8,
+        linestyle="--",
+        color="black",
+    )
+    ax.set_xlabel("edgeR log2 fold change: g1 / g5+g6")
+    ax.set_ylabel("-log10 FDR")
 
+
+def _plot_volcano(features: pd.DataFrame, stratum: str, *, labels: bool) -> None:
+    data = _volcano_data(features)
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.barh(top["v_gene"], top["n_edger_significant"])
-    ax.set_xlabel("Significant aaV clonotypes: edgeR FDR < 0.05")
-    ax.set_ylabel("V segment")
-    ax.set_title(f"Count-based V-segment ranking: {STRATUM_LABELS[stratum]}")
-    save_figure(fig, APPROACH, stratum, "v_segment_ranking")
+    _draw_volcano(ax, data)
+    if labels and not data.empty:
+        top = data.sort_values(["FDR", "logFC"], ascending=[True, False]).head(10)
+        for row in top.itertuples():
+            ax.annotate(
+                str(row.feature_id),
+                (row.logFC, row.minus_log10_fdr),
+                fontsize=6,
+                xytext=(3, 3),
+                textcoords="offset points",
+            )
+    qualifier = " with leading clonotypes" if labels else ""
+    ax.set_title(
+        f"edgeR differential clonotype abundance{qualifier}: {STRATUM_LABELS[stratum]}"
+    )
+    stem = "04_edger_volcano_labeled" if labels else "03_edger_volcano"
+    save_figure(fig, APPROACH, stratum, stem)
+
+
+def _draw_ma(ax, data: pd.DataFrame) -> None:
+    data = data.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=["logCPM", "logFC", "FDR"]
+    )
+    if data.empty:
+        _empty_panel(ax, "No edgeR-tested aaV clonotypes were available.")
+        return
+    colors = np.where(data["FDR"].lt(FDR_THRESHOLD), "#C44E52", "#A7A7A7")
+    ax.scatter(data["logCPM"], data["logFC"], s=14, alpha=0.65, c=colors)
+    ax.axhline(1, linewidth=0.8, linestyle="--", color="black")
+    ax.axhline(-1, linewidth=0.8, linestyle="--", color="black")
+    ax.set_xlabel("Mean clonotype abundance, logCPM")
+    ax.set_ylabel("edgeR log2 fold change: g1 / g5+g6")
+
+
+def _plot_ma(features: pd.DataFrame, stratum: str, *, labels: bool) -> None:
+    data = features.copy()
+    fig, ax = plt.subplots(figsize=(8, 6))
+    _draw_ma(ax, data)
+    if labels:
+        finite = data.replace([np.inf, -np.inf], np.nan).dropna(
+            subset=["logCPM", "logFC", "FDR"]
+        )
+        top = finite.sort_values(["FDR", "logFC"], ascending=[True, False]).head(10)
+        for row in top.itertuples():
+            ax.annotate(
+                str(row.feature_id),
+                (row.logCPM, row.logFC),
+                fontsize=6,
+                xytext=(3, 3),
+                textcoords="offset points",
+            )
+    qualifier = " with leading clonotypes" if labels else ""
+    ax.set_title(f"edgeR MA plot{qualifier}: {STRATUM_LABELS[stratum]}")
+    stem = "06_edger_ma_labeled" if labels else "05_edger_ma"
+    save_figure(fig, APPROACH, stratum, stem)
+
+
+def _plot_top_clonotypes(features: pd.DataFrame, stratum: str) -> None:
+    significant = features[
+        features["FDR"].lt(FDR_THRESHOLD) & features["logFC"].gt(0)
+    ].copy()
+    top = significant.sort_values(["logFC", "FDR"], ascending=[False, True]).head(15)
+    top = top.sort_values("logFC")
+    fig, ax = plt.subplots(figsize=(9, 7))
+    if top.empty:
+        _empty_panel(ax, "No g1-enriched aaV clonotypes passed edgeR FDR < 0.05.")
+    else:
+        ax.barh(top["feature_id"], top["logFC"], color="#4C72B0")
+        ax.set_xlabel("edgeR log2 fold change: g1 / g5+g6")
+        ax.set_ylabel("aaV clonotype")
+        ax.tick_params(axis="y", labelsize=6)
+    ax.set_title(f"Leading g1-enriched aaV clonotypes: {STRATUM_LABELS[stratum]}")
+    save_figure(fig, APPROACH, stratum, "07_top_g1_enriched_clonotypes")
+
+
+def _plot_trav_effect(ranking: pd.DataFrame, stratum: str) -> None:
+    data = ranking[
+        ranking["n_edger_significant"].gt(0)
+        & ranking["mean_effect_g1_vs_allogeneic"].notna()
+    ].copy()
+    top = data.sort_values(
+        ["mean_effect_g1_vs_allogeneic", "n_edger_significant"],
+        ascending=[False, False],
+    ).head(15)
+    top = top.sort_values("mean_effect_g1_vs_allogeneic")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    if top.empty:
+        _empty_panel(
+            ax, "No TRAV segment contained an edgeR-significant aaV clonotype."
+        )
+    else:
+        ax.barh(top["v_gene"], top["mean_effect_g1_vs_allogeneic"], color="#55A868")
+        ax.set_xlabel("Mean edgeR log2 fold change among significant aaV clonotypes")
+        ax.set_ylabel("TRAV segment")
+    ax.set_title(f"TRAV segments ranked by mean effect: {STRATUM_LABELS[stratum]}")
+    save_figure(fig, APPROACH, stratum, "08_trav_mean_effect")
+
+
+def _plot_trav_count(ranking: pd.DataFrame, stratum: str) -> None:
+    top = ranking[ranking["n_edger_significant"].gt(0)].head(15).copy()
+    top = top.sort_values("n_edger_significant")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    if top.empty:
+        _empty_panel(
+            ax, "No TRAV segment contained an edgeR-significant aaV clonotype."
+        )
+    else:
+        ax.barh(top["v_gene"], top["n_edger_significant"], color="#8172B3")
+        ax.set_xlabel("edgeR-significant aaV clonotypes")
+        ax.set_ylabel("TRAV segment")
+    ax.set_title(
+        f"TRAV segments ranked by significant-clonotype count: "
+        f"{STRATUM_LABELS[stratum]}"
+    )
+    save_figure(fig, APPROACH, stratum, "09_trav_significant_feature_count")
+
+
+def _plot_method_concordance(features: pd.DataFrame, stratum: str) -> None:
+    data = features.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=["logFC", "fisher_log2fc_g1_vs_allogeneic"]
+    )
+    fig, ax = plt.subplots(figsize=(7, 6))
+    if data.empty:
+        _empty_panel(
+            ax, "No aaV clonotypes were jointly estimable by edgeR and Fisher testing."
+        )
+    else:
+        colors = np.where(data["consensus_significant"], "#C44E52", "#6E6E6E")
+        ax.scatter(
+            data["fisher_log2fc_g1_vs_allogeneic"],
+            data["logFC"],
+            s=14,
+            alpha=0.6,
+            c=colors,
+        )
+        lower = float(
+            min(data["fisher_log2fc_g1_vs_allogeneic"].min(), data["logFC"].min())
+        )
+        upper = float(
+            max(data["fisher_log2fc_g1_vs_allogeneic"].max(), data["logFC"].max())
+        )
+        ax.plot(
+            [lower, upper], [lower, upper], linestyle="--", color="black", linewidth=0.8
+        )
+        rho = spearmanr(
+            data["fisher_log2fc_g1_vs_allogeneic"],
+            data["logFC"],
+        ).statistic
+        ax.text(
+            0.03, 0.97, f"Spearman rho = {rho:.2f}", transform=ax.transAxes, va="top"
+        )
+        ax.set_xlabel("Fisher log2 frequency ratio: g1 / g5+g6")
+        ax.set_ylabel("edgeR log2 fold change: g1 / g5+g6")
+    ax.set_title(f"Fisher and edgeR effect concordance: {STRATUM_LABELS[stratum]}")
+    save_figure(fig, APPROACH, stratum, "10_fisher_edger_concordance")
+
+
+def _build_ranking(features: pd.DataFrame, set_table: pd.DataFrame) -> pd.DataFrame:
+    edger_significant = features[features["FDR"].lt(FDR_THRESHOLD)]
+    fisher_significant = features[features["fisher_fdr"].lt(FDR_THRESHOLD)]
+    consensus = features[features["consensus_significant"]]
+
+    edger_by_v = edger_significant.groupby("v_gene", as_index=False).agg(
+        n_edger_significant=("feature_id", "size"),
+        mean_effect_g1_vs_allogeneic=("logFC", "mean"),
+        max_effect_g1_vs_allogeneic=("logFC", "max"),
+        median_edger_fdr=("FDR", "median"),
+    )
+    fisher_by_v = fisher_significant.groupby("v_gene", as_index=False).agg(
+        n_fisher_significant=("feature_id", "size"),
+        mean_fisher_effect_g1_vs_allogeneic=(
+            "fisher_log2fc_g1_vs_allogeneic",
+            "mean",
+        ),
+        median_fisher_fdr=("fisher_fdr", "median"),
+    )
+    consensus_by_v = (
+        consensus.groupby("v_gene", as_index=False)
+        .size()
+        .rename(columns={"size": "n_consensus"})
+    )
+
+    ranking = edger_by_v.merge(fisher_by_v, on="v_gene", how="outer")
+    ranking = ranking.merge(consensus_by_v, on="v_gene", how="outer")
+    ranking = ranking.merge(set_table, on="v_gene", how="outer")
+    for column in (
+        "n_edger_significant",
+        "n_fisher_significant",
+        "n_consensus",
+        "n_g1_exclusive",
+    ):
+        ranking[column] = ranking[column].fillna(0).astype(int)
+
+    ranking["evidence_score"] = (
+        3.0 * ranking["n_consensus"]
+        + 2.0 * ranking["n_edger_significant"]
+        + ranking["n_fisher_significant"]
+        + np.log1p(ranking["n_g1_exclusive"])
+    )
+    ranking["effect_direction"] = "undetermined"
+    ranking.loc[
+        ranking["mean_effect_g1_vs_allogeneic"].gt(0),
+        "effect_direction",
+    ] = "g1_enriched"
+    ranking.loc[
+        ranking["mean_effect_g1_vs_allogeneic"].lt(0),
+        "effect_direction",
+    ] = "g5_g6_enriched"
+    missing_edger = ranking["mean_effect_g1_vs_allogeneic"].isna()
+    ranking.loc[
+        missing_edger & ranking["mean_fisher_effect_g1_vs_allogeneic"].gt(0),
+        "effect_direction",
+    ] = "g1_enriched"
+    ranking.loc[
+        missing_edger & ranking["mean_fisher_effect_g1_vs_allogeneic"].lt(0),
+        "effect_direction",
+    ] = "g5_g6_enriched"
+
+    ranking["evidence_class"] = "set_exclusive_only"
+    ranking.loc[ranking["n_fisher_significant"].gt(0), "evidence_class"] = (
+        "fisher_supported"
+    )
+    ranking.loc[ranking["n_edger_significant"].gt(0), "evidence_class"] = (
+        "edger_supported"
+    )
+    ranking.loc[ranking["n_consensus"].gt(0), "evidence_class"] = (
+        "edger_fisher_consensus"
+    )
+
+    ranking["absolute_effect"] = (
+        ranking["mean_effect_g1_vs_allogeneic"]
+        .abs()
+        .fillna(ranking["mean_fisher_effect_g1_vs_allogeneic"].abs())
+    )
+    ranking = ranking.sort_values(
+        ["evidence_score", "absolute_effect", "n_g1_exclusive", "v_gene"],
+        ascending=[False, False, False, True],
+        na_position="last",
+    ).reset_index(drop=True)
+    ranking["rank"] = np.arange(1, len(ranking) + 1)
+    ranking["score"] = ranking["evidence_score"]
+    return ranking.drop(columns="absolute_effect")
+
+
+def _result_paragraphs(payload: dict, top_genes: list[str]) -> list[str]:
+    paragraphs = [
+        (
+            f"This stratum included {payload['n_analysis_units']} independent analysis "
+            f"units from {payload['n_input_samples']} samples. Exact set subtraction "
+            f"identified {payload['n_g1_exclusive_clonotypes']} aaV clonotypes present "
+            "in g1 and absent from both g5 and g6."
+        )
+    ]
+    if payload["n_edger_significant_clonotypes"]:
+        paragraphs.append(
+            f"edgeR identified {payload['n_edger_significant_clonotypes']} differential "
+            f"aaV clonotypes at FDR < {FDR_THRESHOLD:.2f}; "
+            f"{payload['n_fisher_edger_consensus']} also passed Fisher FDR control."
+        )
+    elif payload["n_fisher_significant_clonotypes"]:
+        paragraphs.append(
+            "No aaV clonotype passed edgeR FDR control, while Fisher testing identified "
+            f"{payload['n_fisher_significant_clonotypes']} candidates. These signals "
+            "require cautious interpretation because Fisher testing pools counts across "
+            "analysis units."
+        )
+    else:
+        paragraphs.append(
+            "Neither edgeR nor Fisher testing identified a differential aaV clonotype "
+            f"at FDR < {FDR_THRESHOLD:.2f}."
+        )
+    paragraphs.append(
+        f"The highest-ranked distinctive TRAV segments were {format_gene_list(top_genes)}."
+    )
+    return paragraphs
 
 
 def run_stratum(repertoire: pd.DataFrame, stratum: str) -> dict:
@@ -230,111 +522,159 @@ def run_stratum(repertoire: pd.DataFrame, stratum: str) -> dict:
     features["v_gene"] = _v_gene_from_feature(features["feature_id"])
     features["stratum"] = stratum
     features["effect_g1_vs_allogeneic"] = features["logFC"]
-    features["consensus_significant"] = features["FDR"].lt(0.05) & features[
+    features["consensus_significant"] = features["FDR"].lt(FDR_THRESHOLD) & features[
         "fisher_fdr"
-    ].lt(0.05)
+    ].lt(FDR_THRESHOLD)
 
-    significant = features[features["FDR"].lt(0.05)].copy()
-    ranking = (
-        significant.groupby("v_gene", as_index=False)
-        .agg(
-            n_edger_significant=("feature_id", "size"),
-            n_consensus=("consensus_significant", "sum"),
-            mean_effect_g1_vs_allogeneic=(
-                "effect_g1_vs_allogeneic",
-                "mean",
-            ),
-            max_effect_g1_vs_allogeneic=(
-                "effect_g1_vs_allogeneic",
-                "max",
-            ),
-            median_fdr=("FDR", "median"),
-        )
-        .merge(set_table, on="v_gene", how="outer")
-        .fillna(
-            {
-                "n_edger_significant": 0,
-                "n_consensus": 0,
-                "n_g1_exclusive": 0,
-            }
-        )
-    )
-    ranking = ranking.sort_values(
-        [
-            "n_edger_significant",
-            "mean_effect_g1_vs_allogeneic",
-            "n_g1_exclusive",
-        ],
-        ascending=[False, False, False],
-        na_position="last",
-    ).reset_index(drop=True)
-    ranking["rank"] = np.arange(1, len(ranking) + 1)
-    ranking["score"] = ranking["n_edger_significant"].astype(float)
+    ranking = _build_ranking(features, set_table)
     ranking["stratum"] = stratum
 
     output = _output_dir()
-    features.to_csv(
-        output / f"{stratum}_clonotype_statistics.csv",
-        index=False,
-    )
-    ranking.to_csv(
-        output / f"{stratum}_v_gene_ranking.csv",
-        index=False,
-    )
-    set_table.to_csv(
-        output / f"{stratum}_g1_exclusive_v_genes.csv",
-        index=False,
-    )
-    _plot_set_overlap(sets, stratum)
-    _plot_volcano(features, stratum)
-    _plot_ranking(ranking, stratum)
+    counts.to_csv(output / f"{stratum}_count_matrix.csv")
+    features.to_csv(output / f"{stratum}_clonotype_statistics.csv", index=False)
+    ranking.to_csv(output / f"{stratum}_trav_ranking.csv", index=False)
+    set_table.to_csv(output / f"{stratum}_g1_exclusive_trav.csv", index=False)
 
-    top_genes = (
-        ranking[ranking["n_edger_significant"].gt(0)]
-        .head(5)["v_gene"]
-        .dropna()
-        .tolist()
-    )
+    _plot_set_overlap(sets, stratum)
+    _plot_exclusive_trav(set_table, stratum)
+    _plot_volcano(features, stratum, labels=False)
+    _plot_volcano(features, stratum, labels=True)
+    _plot_ma(features, stratum, labels=False)
+    _plot_ma(features, stratum, labels=True)
+    _plot_top_clonotypes(features, stratum)
+    _plot_trav_effect(ranking, stratum)
+    _plot_trav_count(ranking, stratum)
+    _plot_method_concordance(features, stratum)
+
+    distinctive = ranking[ranking["evidence_score"].gt(0)]
+    top_genes = distinctive.head(5)["v_gene"].dropna().tolist()
     payload = {
         "stratum": stratum,
         "label": STRATUM_LABELS[stratum],
         "n_input_samples": int(model_data["sample_id"].nunique()),
         "n_analysis_units": int(model_data["analysis_unit"].nunique()),
         "n_g1_exclusive_clonotypes": len(g1_exclusive),
-        "n_edger_significant_clonotypes": int(features["FDR"].lt(0.05).sum()),
+        "n_edger_significant_clonotypes": int(features["FDR"].lt(FDR_THRESHOLD).sum()),
+        "n_fisher_significant_clonotypes": int(
+            features["fisher_fdr"].lt(FDR_THRESHOLD).sum()
+        ),
         "n_fisher_edger_consensus": int(features["consensus_significant"].sum()),
-        "top_v_genes": top_genes,
+        "top_trav_segments": top_genes,
     }
     return save_conclusion(
         output,
         stratum,
         f"Approach 1 conclusion: {STRATUM_LABELS[stratum]}",
         payload,
-        [
-            (
-                f"Approach 1 analyzed {payload['n_analysis_units']} independent "
-                f"units and identified {payload['n_g1_exclusive_clonotypes']} "
-                "exact aaV clonotypes observed in g1 and absent from g5 and g6."
-            ),
-            (
-                f"edgeR detected {payload['n_edger_significant_clonotypes']} "
-                "clonotypes at FDR < 0.05; "
-                f"{payload['n_fisher_edger_consensus']} were also supported "
-                "by Fisher's exact test."
-            ),
-            (f"The highest-ranked V segments were {format_gene_list(top_genes)}."),
-        ],
+        _result_paragraphs(payload, top_genes),
     )
+
+
+def _plot_cross_stratum_trav(summary: pd.DataFrame) -> None:
+    fig, ax = plt.subplots(figsize=(11, 8))
+    if summary.empty:
+        _empty_panel(
+            ax, "No distinctive TRAV segments were identified across the strata."
+        )
+    else:
+        recurrence = (
+            summary.groupby("v_gene")["stratum"].nunique().sort_values(ascending=False)
+        )
+        genes = recurrence.head(20).index
+        matrix = (
+            summary[summary["v_gene"].isin(genes)]
+            .pivot_table(
+                index="v_gene",
+                columns="stratum",
+                values="evidence_score",
+                aggfunc="max",
+                fill_value=0,
+            )
+            .reindex(index=genes)
+        )
+        image = ax.imshow(matrix.to_numpy(float), aspect="auto", cmap="viridis")
+        ax.set_xticks(
+            np.arange(len(matrix.columns)), matrix.columns, rotation=45, ha="right"
+        )
+        ax.set_yticks(np.arange(len(matrix.index)), matrix.index)
+        ax.set_xlabel("Biological stratum")
+        ax.set_ylabel("TRAV segment")
+        fig.colorbar(image, ax=ax, label="Integrated count-based evidence score")
+    ax.set_title("Distinctive TRAV evidence across eight biological strata")
+    save_figure(fig, APPROACH, None, "distinctive_trav_across_eight_strata")
 
 
 def compile_summary(strata) -> pd.DataFrame:
     rows = []
+    ranking_rows = []
     output = _output_dir()
     for stratum in strata:
-        path = output / f"{stratum}_conclusion.json"
-        if path.exists():
-            rows.append(json.loads(path.read_text(encoding="utf-8")))
+        conclusion_path = output / f"{stratum}_conclusion.json"
+        ranking_path = output / f"{stratum}_trav_ranking.csv"
+        if conclusion_path.exists():
+            rows.append(json.loads(conclusion_path.read_text(encoding="utf-8")))
+        if ranking_path.exists():
+            ranking = pd.read_csv(ranking_path)
+            ranking = ranking[ranking["evidence_score"].gt(0)].copy()
+            ranking["stratum_label"] = STRATUM_LABELS[stratum]
+            ranking_rows.append(ranking)
 
     summary = pd.DataFrame(rows)
-    summary.to_csv(output / "stratum_summary.csv", index=False)
+    csv_summary = summary.copy()
+    if "top_trav_segments" in csv_summary:
+        csv_summary["top_trav_segments"] = csv_summary["top_trav_segments"].apply(
+            lambda values: "; ".join(values)
+        )
+    csv_summary.to_csv(output / "eight_stratum_summary.csv", index=False)
+
+    if ranking_rows:
+        distinctive = pd.concat(ranking_rows, ignore_index=True)
+        recurrence = distinctive.groupby("v_gene").agg(
+            n_strata_with_evidence=("stratum", "nunique"),
+            best_rank=("rank", "min"),
+            total_evidence_score=("evidence_score", "sum"),
+        )
+        distinctive = distinctive.merge(recurrence, on="v_gene", how="left")
+        distinctive = distinctive.sort_values(
+            ["n_strata_with_evidence", "total_evidence_score", "stratum", "rank"],
+            ascending=[False, False, True, True],
+        )
+    else:
+        distinctive = pd.DataFrame(
+            columns=[
+                "v_gene",
+                "stratum",
+                "stratum_label",
+                "rank",
+                "evidence_score",
+                "evidence_class",
+                "effect_direction",
+                "n_strata_with_evidence",
+            ]
+        )
+    distinctive.to_csv(output / "distinctive_trav_summary.csv", index=False)
+    _plot_cross_stratum_trav(distinctive)
+
+    if distinctive.empty:
+        leading = []
+    else:
+        leading = (
+            distinctive.sort_values(
+                ["n_strata_with_evidence", "total_evidence_score"],
+                ascending=[False, False],
+            )["v_gene"]
+            .drop_duplicates()
+            .head(10)
+            .tolist()
+        )
+    final_text = (
+        "# Approach 1: cross-stratum conclusion\n\n"
+        "Eight prespecified biological strata were analyzed independently. The TRAV "
+        f"segments with the broadest count-based support were "
+        f"{format_gene_list(leading, limit=10)}. Detailed evidence, effect direction, "
+        "and stratum-specific rank are retained in `distinctive_trav_summary.csv`; "
+        "the eight separate conclusion files should be used for biological "
+        "interpretation of compartment-specific signals.\n"
+    )
+    (output / "cross_stratum_conclusion.md").write_text(final_text, encoding="utf-8")
     return summary

@@ -66,8 +66,8 @@ def test_combined_stratum_pools_tissues_within_group_and_mouse():
     assert combined["sample_id"].nunique() == 4
     assert combined["analysis_unit"].nunique() == 2
     assert set(combined["analysis_unit"]) == {
-        "g1|m1|cd4|combined",
-        "g5|m1|cd4|combined",
+        "g1|m1|cd4_combined",
+        "g5|m1|cd4_combined",
     }
 
 
@@ -75,6 +75,23 @@ def test_tissue_stratum_keeps_sample_level_units():
     thymus = select_stratum(_annotated_rows(), "cd4_thymus")
 
     assert thymus["analysis_unit"].tolist() == thymus["sample_id"].tolist()
+
+
+def test_thymus_combined_pools_cd4_and_cd8_within_mouse():
+    frame = _annotated_rows()
+    cd8 = frame[frame["_tissue"].eq("thymus")].copy()
+    cd8["_cell_subset"] = "cd8"
+    cd8["sample_id"] = cd8["sample_id"].str.replace("cd4", "cd8")
+    cd8["cdr3"] = ["CASSA", "CASSG"]
+    cd8["ckey"] = cd8["cdr3"] + "|" + cd8["v_gene"]
+
+    combined = select_stratum(pd.concat([frame, cd8]), "thymus_combined")
+
+    assert combined["sample_id"].nunique() == 4
+    assert set(combined["analysis_unit"]) == {
+        "g1|m1|thymus_combined",
+        "g5|m1|thymus_combined",
+    }
 
 
 def test_analysis_metadata_rejects_conflicting_units():

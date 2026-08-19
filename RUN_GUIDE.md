@@ -1,107 +1,182 @@
 # Execution guide
 
-## 1. Prepare the environment
+## 1. Update the repository safely
 
-From the repository root:
-
-```bash
-conda env create -f environment.yml
-conda activate mice-transplant-2025
-python scripts/validate_repository.py
-python -m pytest -q
-```
-
-For an existing environment:
-
-```bash
-conda env update -n mice-transplant-2025 -f environment.yml --prune
-conda activate mice-transplant-2025
-```
-
-## 2. Verify the data used by the original first pass
-
-`venn_original.ipynb` uses the existing HPC project layout:
-
-```text
-/projects/mice_transplant_2025/metadata_mice_transplant.csv
-/projects/mice_transplant_2025/test_run/clonosets_mice_transplant_2025_df.csv
-/projects/mice_transplant_2025/test_run/mixcr/
-```
-
-Check the two direct tabular inputs before execution:
-
-```bash
-test -s /projects/mice_transplant_2025/metadata_mice_transplant.csv
-test -s /projects/mice_transplant_2025/test_run/clonosets_mice_transplant_2025_df.csv
-```
-
-The second CSV is a sample and file index. Its `filename` column points to the exported MiXCR clonotype tables. The notebook passes this index to repseq, which builds the exact aaV count tables during execution.
-
-No Parquet file is required for this first pass. The raw FASTQ directory is needed only when `presenting_repseq.ipynb` is used to regenerate MiXCR outputs.
-
-## 3. Run the verified first pass on HPC
-
-From the audit checkout:
+From the HPC checkout:
 
 ```bash
 cd ~/mice_transplant_env_test
+git status --short
+git switch reproducible-article-environment
+git pull --ff-only origin reproducible-article-environment
+git log -1 --oneline
+```
+
+If `git status --short` lists modified tracked files, save them before pulling:
+
+```bash
+git stash push -u -m "HPC notebooks and outputs before repository update"
+git pull --ff-only origin reproducible-article-environment
+git stash list
+```
+
+Do not restore an old full-tree stash automatically after the update. The legacy notebook
+layout differs from the active layout and may produce path conflicts.
+
+## 2. Update the environment
+
+```bash
+conda env update \
+  -n mice-transplant-2025 \
+  -f environment.yml \
+  --prune
 conda activate mice-transplant-2025
-mkdir -p audit_runs logs
-
-jupyter nbconvert \
-  --to notebook \
-  --execute venn_original.ipynb \
-  --ExecutePreprocessor.kernel_name=python3 \
-  --ExecutePreprocessor.timeout=-1 \
-  --output-dir audit_runs \
-  --output 01_venn_original.executed.ipynb \
-  2>&1 | tee logs/01_venn_original.log
 ```
 
-The executed notebook is written to:
+The environment contains the pinned `repseq` revision, R, rpy2, and edgeR required by
+Approach 1.
 
-```text
-audit_runs/01_venn_original.executed.ipynb
-```
-
-The complete console record is written to:
-
-```text
-logs/01_venn_original.log
-```
-
-If `venn_original.ipynb` is absent because the modular branch removed legacy root notebooks, restore the DESeq2-free version from repository history:
+## 3. Verify the direct inputs for Approach 1
 
 ```bash
-git show 6678766a0e8913ec2feacb3efb2daebd6a27eda4:venn_original.ipynb \
-  > venn_original.ipynb
+test -s /projects/mice_transplant_2025/metadata_mice_transplant.csv \
+  && echo "Metadata CSV: OK"
+
+test -s /projects/mice_transplant_2025/test_run/clonosets_mice_transplant_2025_df.csv \
+  && echo "Clonoset index: OK"
 ```
 
-The notebook attached during the audit represents the immediately preceding DESeq2-containing state. It confirms the same CSV and MiXCR input route. The command above restores the subsequent version in which the DESeq2 section was removed.
+The clonoset-index CSV contains the MiXCR export paths. Approach 1 validates every
+referenced file before creating the aaV count table. Parquet is not used by this method.
 
-## 4. Understand the modular Parquet interface
-
-The concise notebooks under `approaches/` were added later. Modular Approaches 1 to 3 call `src.strata.load_repertoire()` and expect:
-
-```text
-data/clean_clonotypes_aaV.parquet
-```
-
-This is a derived, sample-resolved analysis table with the following fields:
-
-```text
-cdr3, v_gene, umi, group, sample_id, mouse_id, source, subtype
-```
-
-The repository currently has no verified command that creates this table from the MiXCR clonoset index. Therefore the modular runner is valid only when the derived table has already been materialized. It is not the required route for rerunning `venn_original.ipynb`.
-
-When the derived table exists, its directory can be supplied with:
+## 4. Run Approach 1 across all eight strata
 
 ```bash
-export MICE_TCR_DATA_DIR=/absolute/path/to/derived_data
+python scripts/run_analysis.py --approach 1
 ```
 
-or:
+The command uses the documented HPC paths by default. To provide different locations:
+
+```bash
+python scripts/run_analysis.py \
+  --approach 1 \
+  --metadata-csv /absolute/path/to/metadata_mice_transplant.csv \
+  --clonoset-index /absolute/path/to/clonosets_mice_transplant_2025_df.csv
+```
+
+The eight analyses are executed in this order:
+
+1. `cd4_thymus`
+2. `cd8_thymus`
+3. `cd4_spleen`
+4. `cd8_spleen`
+5. `cd4_combined`
+6. `cd8_combined`
+7. `thymus_combined`
+8. `spleen_combined`
+
+The four pooled strata use mouse-level analysis units.
+
+## 5. Run selected Approach 1 strata
+
+One stratum:
+
+```bash
+python scripts/run_analysis.py \
+  --approach 1 \
+  --strata cd4_thymus
+```
+
+Several strata:
+
+```bash
+python scripts/run_analysis.py \
+  --approach 1 \
+  --strata cd4_thymus,cd8_thymus,thymus_combined
+```
+
+The consolidated table contains the strata completed by that invocation. Run all eight
+strata for the final manuscript-level comparison.
+
+## 6. Monitor progress
+
+Follow the complete runner log:
+
+```bash
+tail -f results/logs/pipeline.log
+```
+
+Follow Approach 1 at cell level:
+
+```bash
+tail -f results/logs/01_set_count.log
+```
+
+Each entry reports the cell position, stable cell ID, analysis step, elapsed time, and
+remaining cell count:
+
+```text
+[CELL 003/010] id=a1-stratum-1 | step=Analyze CD4 T cells: thymus | START
+[CELL 003/010] id=a1-stratum-1 | step=Analyze CD4 T cells: thymus | RUNNING | elapsed=300s
+[CELL 003/010] id=a1-stratum-1 | step=Analyze CD4 T cells: thymus | DONE in 412.7s
+```
+
+## 7. Resume after interruption
+
+```bash
+python scripts/run_analysis.py --approach 1 --resume
+```
+
+The runner reloads the executed-notebook checkpoint, rebuilds the bootstrap state, and
+skips completed analytical cells with matching IDs.
+
+## 8. Locate Approach 1 results
+
+| Output | Location |
+|---|---|
+| Per-stratum tables and conclusions | `results/01_set_count/` |
+| Eight-stratum overview | `results/01_set_count/eight_stratum_summary.csv` |
+| Consolidated distinctive TRAV table | `results/01_set_count/distinctive_trav_summary.csv` |
+| Executed notebook | `results/executed_notebooks/01_set_count.executed.ipynb` |
+| Cell-level log | `results/logs/01_set_count.log` |
+| Figures | `figures/01_set_count/<stratum>/` |
+| Figure inventory | `results/figure_inventory.csv` |
+
+Each stratum produces ten plot types in both PNG and PDF format. A statistically null
+result still produces a labeled figure panel, which keeps the eight output sets complete
+and directly comparable.
+
+## 9. Run Approaches 2 to 4
+
+Approaches 2 and 3 use the later derived sample-resolved table:
+
+```text
+/absolute/path/to/derived_data/clean_clonotypes_aaV.parquet
+```
+
+Run Approach 2:
+
+```bash
+python scripts/run_analysis.py \
+  --approach 2 \
+  --data-dir /absolute/path/to/derived_data
+```
+
+Run Approach 3:
+
+```bash
+python scripts/run_analysis.py \
+  --approach 3 \
+  --data-dir /absolute/path/to/derived_data
+```
+
+Compare completed outputs from Approaches 1 to 3:
+
+```bash
+python scripts/run_analysis.py --approach 4
+```
+
+Run all methods in publication order:
 
 ```bash
 python scripts/run_analysis.py \
@@ -109,142 +184,28 @@ python scripts/run_analysis.py \
   --data-dir /absolute/path/to/derived_data
 ```
 
-The complete provenance audit is available in [docs/notebook_input_provenance.md](docs/notebook_input_provenance.md).
-
-## 5. Understand the six modular strata
-
-| Stratum | Independent analysis unit |
-|---|---|
-| `cd4_thymus` | One CD4 thymus sample |
-| `cd4_spleen` | One CD4 spleen sample |
-| `cd8_thymus` | One CD8 thymus sample |
-| `cd8_spleen` | One CD8 spleen sample |
-| `cd4_combined` | CD4 thymus and spleen pooled within each mouse |
-| `cd8_combined` | CD8 thymus and spleen pooled within each mouse |
-
-The combined analyses preserve mouse-level independence. CD4 and CD8 cells are always analyzed separately.
-
-## 6. Run the modular analyses
-
-Modular Approach 1: exact aaV sets, edgeR, and Fisher cross-check. Use this command only after the derived Parquet table has been prepared:
-
-```bash
-python scripts/run_analysis.py --approach 1
-```
-
-Approach 2: sequence-space density, RFF-MMD, PERMANOVA, and witness scoring:
-
-```bash
-python scripts/run_analysis.py --approach 2
-```
-
-Approach 3: mouse-level clone evidence and V-segment prioritization:
-
-```bash
-python scripts/run_analysis.py --approach 3
-```
-
-Cross-approach comparison after Approaches 1–3:
-
-```bash
-python scripts/run_analysis.py --approach 4
-```
-
-Complete publication pipeline:
-
-```bash
-python scripts/run_analysis.py --approach all
-```
-
-Selected approaches:
-
-```bash
-python scripts/run_analysis.py --approach 1,2
-```
-
-Selected strata:
+Run a selected method set:
 
 ```bash
 python scripts/run_analysis.py \
-  --approach 3 \
-  --strata cd4_spleen,cd8_spleen
+  --approach 1,3 \
+  --data-dir /absolute/path/to/derived_data
 ```
 
-## 7. Monitor modular progress
+## 10. Understand the active notebooks
 
-The master log records approach-level progress:
+The four source notebooks are stored directly under `notebooks/` and are numbered by
+execution order. The former nested `approaches/` source directory is no longer used.
 
-```bash
-tail -f outputs/logs/pipeline.log
-```
-
-Each approach also has a cell-level log:
-
-```bash
-tail -f outputs/logs/02_sequence_embedding.log
-```
-
-A cell entry contains:
+An older executed `venn_original.ipynb` may remain in a local `audit_runs/` directory or
+Git stash. Its Russian Markdown and inline figures are historical outputs and are not
+modified by pulling the active branch. The current first-pass notebook is:
 
 ```text
-[CELL 003/009] id=... | step=... | START | 6 position(s) remain
-[CELL 003/009] id=... | step=... | RUNNING | elapsed=300s
-[CELL 003/009] id=... | step=... | DONE in 412.7s | 6 code cell(s) not yet checkpointed
+notebooks/01_set_count_analysis.ipynb
 ```
 
-The executed notebook is checkpointed after every successful code cell.
-
-## 8. Resume a modular run after failure
-
-Use the same approach and strata with `--resume`:
-
-```bash
-python scripts/run_analysis.py \
-  --approach 2 \
-  --strata cd4_thymus,cd8_thymus \
-  --resume
-```
-
-The runner restores outputs from completed cells, re-executes bootstrap cells to rebuild Python state, and skips completed analytical cells. Approach 2 reuses its cached coordinate basis only when the stored clonotype fingerprint matches the current input.
-
-## 9. Locate results
-
-| Result | Location |
-|---|---|
-| Statistical tables | `outputs/tables/<approach>/` |
-| Per-stratum conclusions | `outputs/tables/<approach>/<stratum>_conclusion.md` |
-| Executed notebooks | `outputs/notebooks/` |
-| Logs | `outputs/logs/` |
-| Cached heavy objects | `outputs/cache/` |
-| Figures | `figures/<approach>/<stratum>/` |
-
-Every matplotlib figure is saved as PNG and PDF. The validation script rejects active plotting code that has no persistent figure output.
-
-## 10. Interpret the cross-approach output
-
-Approach-specific V-segment ranks are compared within the same biological stratum. The comparison reports:
-
-1. pairwise rank correlation;
-2. top-10 overlap;
-3. signed effect correlation on a common g1-versus-allogeneic axis;
-4. directional agreement;
-5. direction-aware consensus rank.
-
-A segment can therefore receive repeated ranking support while retaining a mixed effect direction. The pipeline reports that disagreement explicitly.
-
-## 11. Control CPU usage
-
-The runtime respects Linux CPU affinity and Slurm allocation variables. To reduce CPU use within an allocation:
-
-```bash
-ARTICLE_N_JOBS=8 python scripts/run_analysis.py --approach 2
-```
-
-Do not set `ARTICLE_N_JOBS` above the scheduler allocation. See [docs/parallel_execution.md](docs/parallel_execution.md) for monitoring commands and memory policy.
-
-## 12. Final validation
-
-After code or notebook changes:
+## 11. Validate the checkout
 
 ```bash
 python scripts/validate_repository.py
@@ -252,4 +213,15 @@ python -m compileall -q src scripts
 python -m pytest -q
 ```
 
-A full scientific validation requires the correct notebook-specific input. For the historical first pass, this means the metadata CSV, the clonoset-index CSV, and its referenced MiXCR exports. For the modular pipeline, this means a traceably derived sample-resolved Parquet table. Regenerated tables, figures, and conclusions should be reviewed together before manuscript use.
+These checks validate structure, English-only active content, all eight strata, notebook
+cell IDs, centralized figure persistence, Python syntax, and regression behavior. Full
+numerical validation still requires the study data and the edgeR-enabled Conda environment.
+
+## 12. Control CPU use
+
+```bash
+ARTICLE_N_JOBS=8 python scripts/run_analysis.py --approach 1
+```
+
+Do not request more workers than the scheduler allocation. Additional scheduler-specific
+guidance is provided in [`docs/parallel_execution.md`](docs/parallel_execution.md).

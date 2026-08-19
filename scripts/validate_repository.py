@@ -12,17 +12,19 @@ ROOT = Path(__file__).resolve().parents[1]
 CYRILLIC = re.compile(r"[\u0400-\u04FF]")
 EXPECTED_STRATA = {
     "cd4_thymus",
-    "cd4_spleen",
     "cd8_thymus",
+    "cd4_spleen",
     "cd8_spleen",
     "cd4_combined",
     "cd8_combined",
+    "thymus_combined",
+    "spleen_combined",
 }
 EXPECTED_NOTEBOOKS = [
-    ROOT / "approaches/01_set_count/set_count_analysis.ipynb",
-    ROOT / "approaches/02_sequence_embedding/sequence_embedding_analysis.ipynb",
-    ROOT / "approaches/03_clone_alloreactivity/clone_alloreactivity_analysis.ipynb",
-    ROOT / "approaches/04_cross_approach/cross_approach_comparison.ipynb",
+    ROOT / "notebooks/01_set_count_analysis.ipynb",
+    ROOT / "notebooks/02_sequence_embedding_analysis.ipynb",
+    ROOT / "notebooks/03_clone_alloreactivity_analysis.ipynb",
+    ROOT / "notebooks/04_cross_approach_comparison.ipynb",
 ]
 ANALYSIS_MODULES = [
     ROOT / "src/approach1_set_count.py",
@@ -59,6 +61,7 @@ def _active_files():
         ".git",
         "data",
         "outputs",
+        "results",
         "project_sources",
     }
     for path in ROOT.rglob("*"):
@@ -79,6 +82,7 @@ def _validate_required_files() -> None:
         ROOT / "src/strata.py",
         ROOT / "src/runtime.py",
         ROOT / "src/reporting.py",
+        ROOT / "src/first_pass_input.py",
         ROOT / ".github/workflows/validation.yml",
         *EXPECTED_NOTEBOOKS,
         *ANALYSIS_MODULES,
@@ -88,9 +92,23 @@ def _validate_required_files() -> None:
         fail(f"missing required files: {missing}")
     if (ROOT / "RUN_GUIDE_RU.md").exists():
         fail("legacy Russian execution guide remains in the active tree")
+    if (ROOT / "approaches").exists():
+        fail(
+            "legacy approaches/ directory remains; source notebooks belong in notebooks/"
+        )
 
 
 def _validate_language_and_paths() -> None:
+    figure_roots = [
+        path
+        for path in ROOT.rglob("figures")
+        if path.is_dir() and path != ROOT / "figures"
+    ]
+    if figure_roots:
+        fail(
+            "multiple figure roots remain: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in figure_roots)
+        )
     for path, relative in _active_files():
         relative_text = relative.as_posix()
         if CYRILLIC.search(relative_text):
@@ -118,6 +136,7 @@ def _validate_python() -> None:
         ROOT / "src/strata.py",
         ROOT / "src/runtime.py",
         ROOT / "src/reporting.py",
+        ROOT / "src/first_pass_input.py",
         ROOT / "src/figures.py",
         ROOT / "scripts/run_analysis.py",
     ]:
@@ -164,7 +183,7 @@ def _validate_notebooks() -> None:
         absent = {stratum for stratum in EXPECTED_STRATA if stratum not in joined}
         if absent:
             fail(
-                f"{path.relative_to(ROOT)} does not expose all six "
+                f"{path.relative_to(ROOT)} does not expose all eight "
                 f"strata: {sorted(absent)}"
             )
         if "DESeq2" in joined or "deseq" in joined.lower():
@@ -224,6 +243,30 @@ def _validate_documentation_and_runtime() -> None:
     ):
         if token not in strata:
             fail(f"stratification code lacks required token: {token}")
+
+    approach1 = (ROOT / "src/approach1_set_count.py").read_text(encoding="utf-8")
+    for token in (
+        "01_exact_clonotype_overlap",
+        "02_g1_exclusive_trav_usage",
+        "03_edger_volcano",
+        "04_edger_volcano_labeled",
+        "05_edger_ma",
+        "06_edger_ma_labeled",
+        "07_top_g1_enriched_clonotypes",
+        "08_trav_mean_effect",
+        "09_trav_significant_feature_count",
+        "10_fisher_edger_concordance",
+        "eight_stratum_summary.csv",
+        "distinctive_trav_summary.csv",
+    ):
+        if token not in approach1:
+            fail(f"Approach 1 lacks required output token: {token}")
+
+    first_notebook = EXPECTED_NOTEBOOKS[0].read_text(encoding="utf-8")
+    if "load_first_pass_repertoire" not in first_notebook:
+        fail("Approach 1 notebook does not use the verified CSV and MiXCR loader")
+    if "load_repertoire()" in first_notebook:
+        fail("Approach 1 notebook still invokes the derived Parquet loader")
 
     environment = (ROOT / "environment.yml").read_text(encoding="utf-8")
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")

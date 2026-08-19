@@ -46,7 +46,7 @@ HYDROPHOBICITY = {
 
 
 def _output_dir() -> Path:
-    path = repository_root() / "outputs" / "tables" / APPROACH
+    path = repository_root() / "results" / APPROACH
     path.mkdir(parents=True, exist_ok=True)
     return path
 

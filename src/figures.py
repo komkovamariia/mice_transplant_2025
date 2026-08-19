@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import re
 from pathlib import Path
 
@@ -86,3 +87,37 @@ def save_figure(
     if close:
         plt.close(fig)
     return png_path, pdf_path
+
+
+def write_figure_inventory() -> Path:
+    """Write one auditable inventory for every persisted publication figure."""
+    root = repository_root()
+    figure_root = root / "figures"
+    output = root / "results" / "figure_inventory.csv"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for png_path in sorted(figure_root.rglob("*.png")):
+        relative = png_path.relative_to(figure_root)
+        parts = relative.parts
+        approach = parts[0] if len(parts) >= 2 else ""
+        stratum = parts[1] if len(parts) >= 3 else "cross_stratum"
+        pdf_path = png_path.with_suffix(".pdf")
+        rows.append(
+            {
+                "approach": approach,
+                "stratum": stratum,
+                "figure": png_path.stem,
+                "png": png_path.relative_to(root).as_posix(),
+                "pdf": (
+                    pdf_path.relative_to(root).as_posix() if pdf_path.exists() else ""
+                ),
+            }
+        )
+    with output.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["approach", "stratum", "figure", "png", "pdf"],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return output

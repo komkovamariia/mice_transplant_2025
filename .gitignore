@@ -1,15 +1,11 @@
 # Input data are supplied separately.
 data/
 
-# Generated analysis state.
-outputs/cache/*
-outputs/logs/*
-outputs/notebooks/*
-outputs/tables/*
-!outputs/cache/.gitkeep
-!outputs/logs/.gitkeep
-!outputs/notebooks/.gitkeep
-!outputs/tables/.gitkeep
+# Generated analysis state. Keep only the explanatory README files.
+results/*
+!results/README.md
+figures/*
+!figures/README.md
 
 # Python/Jupyter artifacts.
 __pycache__/

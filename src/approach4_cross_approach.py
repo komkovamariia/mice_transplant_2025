@@ -20,39 +20,40 @@ SOURCES = {
     "set_count": {
         "folder": "01_set_count",
         "effect_column": "mean_effect_g1_vs_allogeneic",
+        "ranking_suffix": "trav_ranking",
     },
     "sequence_embedding": {
         "folder": "02_sequence_embedding",
         "effect_column": "median_effect_g1_vs_allogeneic",
+        "ranking_suffix": "v_gene_ranking",
     },
     "clone_alloreactivity": {
         "folder": "03_clone_alloreactivity",
         "effect_column": "mean_effect_g1_vs_allogeneic",
+        "ranking_suffix": "v_gene_ranking",
     },
 }
 
 
 def _output_dir() -> Path:
-    path = repository_root() / "outputs" / "tables" / APPROACH
+    path = repository_root() / "results" / APPROACH
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def _ranking_path(folder: str, stratum: str) -> Path:
-    return (
-        repository_root()
-        / "outputs"
-        / "tables"
-        / folder
-        / f"{stratum}_v_gene_ranking.csv"
-    )
+def _ranking_path(folder: str, stratum: str, suffix: str) -> Path:
+    return repository_root() / "results" / folder / f"{stratum}_{suffix}.csv"
 
 
 def load_rankings(stratum: str) -> dict[str, pd.DataFrame]:
     rankings = {}
     missing = []
     for name, specification in SOURCES.items():
-        path = _ranking_path(specification["folder"], stratum)
+        path = _ranking_path(
+            specification["folder"],
+            stratum,
+            specification["ranking_suffix"],
+        )
         if not path.exists():
             missing.append(str(path))
             continue
@@ -407,7 +408,7 @@ def compile_summary(
     leading = overall.head(10)["v_gene"].tolist()
     markdown = (
         "# Cross-stratum conclusion\n\n"
-        f"The V segments most frequently supported across the six "
+        f"The V segments most frequently supported across the eight "
         f"biological strata were {format_gene_list(leading, limit=10)}. "
         "The accompanying table retains the consensus direction in each "
         "stratum, allowing compartment-specific and directionally mixed "

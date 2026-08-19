@@ -42,13 +42,13 @@ APPROACH = "02_sequence_embedding"
 
 
 def _output_dir() -> Path:
-    path = repository_root() / "outputs" / "tables" / APPROACH
+    path = repository_root() / "results" / APPROACH
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def _cache_dir() -> Path:
-    path = repository_root() / "outputs" / "cache" / APPROACH
+    path = repository_root() / "results" / "cache" / APPROACH
     path.mkdir(parents=True, exist_ok=True)
     return path
 

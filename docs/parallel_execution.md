@@ -31,13 +31,13 @@ Do not set it above the allocated CPU count.
 
 ## Approach-specific policy
 
-Approach 1 delegates R/edgeR numerical work to the configured native thread environment. Tissue-specific count tables remain sample resolved; combined strata pool thymus and spleen within mouse before model fitting. The six strata are analyzed serially so their R model objects do not compete for memory.
+Approach 1 delegates R/edgeR numerical work to the configured native thread environment. Tissue-specific count tables remain sample resolved; pooled strata combine tissues or cell subsets within mouse before model fitting. The eight strata are analyzed serially so their R model objects do not compete for memory.
 
 Approach 2 gives TCREmp the complete scheduler-aware CPU count. The expensive global sequence embedding is chunked in the outer loop while the native embedding and linear-algebra kernels use the allocated cores internally. Running several embedding chunks concurrently would duplicate multi-gigabyte buffers and is intentionally avoided. Local density enrichment retains the exact `kdtree` backend.
 
 Approach 2 PERMANOVA uses `permanova_parallel()`. The complete permutation schedule is generated from a fixed seed in the parent process before worker dispatch. Worker completion order therefore cannot change the p-value.
 
-Approach 3 is dominated by pandas aggregation and CDR3-neighborhood indexing. Abundance is normalized within mouse, and the six biological strata are executed as separate notebook cells. This provides durable checkpoints without duplicating the derived sample-resolved repertoire table across multiple process pools.
+Approach 3 is dominated by pandas aggregation and CDR3-neighborhood indexing. Abundance is normalized within mouse, and the eight biological strata are executed as separate notebook cells. This provides durable checkpoints without duplicating the derived sample-resolved repertoire table across multiple process pools.
 
 ## Memory
 

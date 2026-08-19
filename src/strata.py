@@ -11,20 +11,67 @@ import pandas as pd
 
 STRATA = (
     "cd4_thymus",
-    "cd4_spleen",
     "cd8_thymus",
+    "cd4_spleen",
     "cd8_spleen",
     "cd4_combined",
     "cd8_combined",
+    "thymus_combined",
+    "spleen_combined",
 )
 
 STRATUM_LABELS = {
     "cd4_thymus": "CD4 T cells, thymus",
-    "cd4_spleen": "CD4 T cells, spleen",
     "cd8_thymus": "CD8 T cells, thymus",
+    "cd4_spleen": "CD4 T cells, spleen",
     "cd8_spleen": "CD8 T cells, spleen",
     "cd4_combined": "CD4 T cells, mouse-level thymus + spleen pool",
     "cd8_combined": "CD8 T cells, mouse-level thymus + spleen pool",
+    "thymus_combined": "Thymus, mouse-level CD4 + CD8 pool",
+    "spleen_combined": "Spleen, mouse-level CD4 + CD8 pool",
+}
+
+STRATUM_DEFINITIONS = {
+    "cd4_thymus": {
+        "cell_subsets": ("cd4",),
+        "tissues": ("thymus",),
+        "pool_within_mouse": False,
+    },
+    "cd8_thymus": {
+        "cell_subsets": ("cd8",),
+        "tissues": ("thymus",),
+        "pool_within_mouse": False,
+    },
+    "cd4_spleen": {
+        "cell_subsets": ("cd4",),
+        "tissues": ("spleen",),
+        "pool_within_mouse": False,
+    },
+    "cd8_spleen": {
+        "cell_subsets": ("cd8",),
+        "tissues": ("spleen",),
+        "pool_within_mouse": False,
+    },
+    "cd4_combined": {
+        "cell_subsets": ("cd4",),
+        "tissues": ("thymus", "spleen"),
+        "pool_within_mouse": True,
+    },
+    "cd8_combined": {
+        "cell_subsets": ("cd8",),
+        "tissues": ("thymus", "spleen"),
+        "pool_within_mouse": True,
+    },
+    "thymus_combined": {
+        "cell_subsets": ("cd4", "cd8"),
+        "tissues": ("thymus",),
+        "pool_within_mouse": True,
+    },
+    "spleen_combined": {
+        "cell_subsets": ("cd4", "cd8"),
+        "tissues": ("spleen",),
+        "pool_within_mouse": True,
+    },
 }
 
 REQUIRED_COLUMNS = {
@@ -50,7 +97,7 @@ def repository_root() -> Path:
     here = Path.cwd().resolve()
     for candidate in (here, *here.parents):
         if (candidate / "environment.yml").exists() and (
-            candidate / "approaches"
+            candidate / "notebooks"
         ).exists():
             return candidate
     return here
@@ -145,19 +192,15 @@ def _validate_sample_assignments(df: pd.DataFrame) -> None:
         raise ValueError(f"Inconsistent sample metadata detected: {preview}")
 
 
-def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
-    """Load and validate the canonical sample-resolved aaV table."""
-    repertoire_path = Path(path) if path else clean_repertoire_path()
-    if not repertoire_path.exists():
-        raise FileNotFoundError(
-            f"Canonical repertoire table not found: {repertoire_path}. "
-            "Set MICE_TCR_DATA_DIR or MICE_TCR_CLEAN_PARQUET."
-        )
-
-    df = pd.read_parquet(repertoire_path)
+def normalize_repertoire(
+    df: pd.DataFrame,
+    *,
+    source_label: str = "repertoire table",
+) -> pd.DataFrame:
+    """Validate and annotate a sample-resolved aaV repertoire table."""
     missing = sorted(REQUIRED_COLUMNS.difference(df.columns))
     if missing:
-        raise ValueError(f"{repertoire_path} is missing required columns: {missing}")
+        raise ValueError(f"{source_label} is missing required columns: {missing}")
 
     out = df.copy()
     out["cdr3"] = out["cdr3"].fillna("").astype(str).str.strip().str.upper()
@@ -215,17 +258,29 @@ def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
     return out
 
 
+def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
+    """Load the later derived sample-resolved aaV Parquet interface."""
+    repertoire_path = Path(path) if path else clean_repertoire_path()
+    if not repertoire_path.exists():
+        raise FileNotFoundError(
+            f"Canonical repertoire table not found: {repertoire_path}. "
+            "Set MICE_TCR_DATA_DIR or MICE_TCR_CLEAN_PARQUET."
+        )
+
+    return normalize_repertoire(
+        pd.read_parquet(repertoire_path),
+        source_label=str(repertoire_path),
+    )
+
+
 def select_stratum(df: pd.DataFrame, stratum: str) -> pd.DataFrame:
     """Select one stratum and define its independent analysis unit."""
     if stratum not in STRATA:
         raise ValueError(f"Unknown stratum '{stratum}'. Expected one of {STRATA}.")
 
-    cell_subset, compartment = stratum.split("_", 1)
-    mask = df["_cell_subset"].eq(cell_subset)
-    if compartment == "combined":
-        mask &= df["_tissue"].isin(["thymus", "spleen"])
-    else:
-        mask &= df["_tissue"].eq(compartment)
+    definition = STRATUM_DEFINITIONS[stratum]
+    mask = df["_cell_subset"].isin(definition["cell_subsets"])
+    mask &= df["_tissue"].isin(definition["tissues"])
 
     out = df.loc[mask].copy()
     if out.empty:
@@ -234,10 +289,8 @@ def select_stratum(df: pd.DataFrame, stratum: str) -> pd.DataFrame:
             "Check subtype, source, and sample naming."
         )
 
-    if compartment == "combined":
-        out["analysis_unit"] = (
-            out["group"] + "|" + out["mouse_id"] + f"|{cell_subset}|combined"
-        )
+    if definition["pool_within_mouse"]:
+        out["analysis_unit"] = out["group"] + "|" + out["mouse_id"] + f"|{stratum}"
     else:
         out["analysis_unit"] = out["sample_id"]
     return out
@@ -280,12 +333,11 @@ def requested_strata() -> tuple[str, ...]:
 
 def analysis_metadata(df: pd.DataFrame) -> pd.DataFrame:
     """Return one metadata row per independent analysis unit."""
-    fields = ["analysis_unit", "mouse_id", "group", "_cell_subset"]
+    fields = ["analysis_unit", "mouse_id", "group"]
     metadata = df[fields].drop_duplicates()
     conflicts = metadata.groupby("analysis_unit").agg(
         n_mice=("mouse_id", "nunique"),
         n_groups=("group", "nunique"),
-        n_subsets=("_cell_subset", "nunique"),
     )
     bad = conflicts[(conflicts > 1).any(axis=1)]
     if not bad.empty:

@@ -17,19 +17,19 @@ from nbclient import NotebookClient
 APPROACHES = {
     "1": (
         "01_set_count",
-        "approaches/01_set_count/set_count_analysis.ipynb",
+        "notebooks/01_set_count_analysis.ipynb",
     ),
     "2": (
         "02_sequence_embedding",
-        "approaches/02_sequence_embedding/sequence_embedding_analysis.ipynb",
+        "notebooks/02_sequence_embedding_analysis.ipynb",
     ),
     "3": (
         "03_clone_alloreactivity",
-        "approaches/03_clone_alloreactivity/clone_alloreactivity_analysis.ipynb",
+        "notebooks/03_clone_alloreactivity_analysis.ipynb",
     ),
     "4": (
         "04_cross_approach",
-        "approaches/04_cross_approach/cross_approach_comparison.ipynb",
+        "notebooks/04_cross_approach_comparison.ipynb",
     ),
 }
 ALIASES = {
@@ -144,12 +144,14 @@ def execute_notebook(
     *,
     strata: str,
     data_dir: Path | None,
+    metadata_csv: Path | None,
+    clonoset_index: Path | None,
     resume: bool,
 ) -> Path:
     root = repo_root()
     notebook = nbformat.read(notebook_path, as_version=4)
-    output = root / "outputs" / "notebooks" / f"{approach_name}.executed.ipynb"
-    log_path = root / "outputs" / "logs" / f"{approach_name}.log"
+    output = root / "results" / "executed_notebooks" / f"{approach_name}.executed.ipynb"
+    log_path = root / "results" / "logs" / f"{approach_name}.log"
     logger = Logger(log_path)
 
     code_cells = [cell for cell in notebook.cells if cell.cell_type == "code"]
@@ -179,6 +181,10 @@ def execute_notebook(
     }
     if data_dir is not None:
         environment["MICE_TCR_DATA_DIR"] = str(data_dir.resolve())
+    if metadata_csv is not None:
+        environment["MICE_TCR_METADATA_CSV"] = str(metadata_csv.resolve())
+    if clonoset_index is not None:
+        environment["MICE_TCR_CLONOSET_INDEX"] = str(clonoset_index.resolve())
 
     total = len(code_cells)
     ordinal = {cell.id: index + 1 for index, cell in enumerate(code_cells)}
@@ -310,7 +316,19 @@ def main() -> int:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        help="Directory containing clean_clonotypes_aaV.parquet.",
+        help="Derived-data directory used by Approaches 2 and 3.",
+    )
+    parser.add_argument(
+        "--metadata-csv",
+        type=Path,
+        help=("Approach 1 metadata CSV. The documented HPC path is used when omitted."),
+    )
+    parser.add_argument(
+        "--clonoset-index",
+        type=Path,
+        help=(
+            "Approach 1 clonoset-index CSV. The documented HPC path is used when omitted."
+        ),
     )
     parser.add_argument(
         "--resume",
@@ -324,7 +342,7 @@ def main() -> int:
 
     root = repo_root()
     selected = resolve_sequence(arguments.approach)
-    pipeline_logger = Logger(root / "outputs" / "logs" / "pipeline.log")
+    pipeline_logger = Logger(root / "results" / "logs" / "pipeline.log")
     pipeline_logger.write(
         f"PIPELINE START | approaches={','.join(selected)} | strata={arguments.strata}"
     )
@@ -342,6 +360,8 @@ def main() -> int:
                     name,
                     strata=arguments.strata,
                     data_dir=arguments.data_dir,
+                    metadata_csv=arguments.metadata_csv,
+                    clonoset_index=arguments.clonoset_index,
                     resume=arguments.resume,
                 )
             except BaseException:

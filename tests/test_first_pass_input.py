@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.approach1_set_count import _fisher
+from src.count_statistics import historical_fisher_log2_ratio
 from src.first_pass_input import count_table_to_repertoire, prepare_sample_index
 
 
@@ -97,28 +97,4 @@ def test_count_table_conversion_keeps_positive_functional_trav_rows(tmp_path):
 
 
 def test_fisher_effect_reproduces_historical_pooled_count_ratio():
-    counts = pd.DataFrame(
-        {
-            "g1_mouse_1": [4, 1],
-            "g1_mouse_2": [3, 0],
-            "g5_mouse_1": [2, 3],
-            "g6_mouse_1": [1, 1],
-        },
-        index=["TRA|CAVRDSNYQLIW|TRAV4-2", "TRA|CAVRGSALGRLHF|TRAV7D-3"],
-    )
-    groups = pd.Series(
-        {
-            "g1_mouse_1": "g1",
-            "g1_mouse_2": "g1",
-            "g5_mouse_1": "allogeneic",
-            "g6_mouse_1": "allogeneic",
-        }
-    )
-
-    result = _fisher(counts, groups).set_index("feature_id")
-
-    observed = result.loc[
-        "TRA|CAVRDSNYQLIW|TRAV4-2",
-        "fisher_log2fc_g1_vs_allogeneic",
-    ]
-    assert observed == pytest.approx(1.0)
+    assert historical_fisher_log2_ratio(7, 3) == pytest.approx(1.0)

@@ -12,6 +12,7 @@ from matplotlib_venn import venn3
 from scipy.stats import fisher_exact, spearmanr
 from statsmodels.stats.multitest import multipletests
 
+from .count_statistics import historical_fisher_log2_ratio
 from .figures import save_figure
 from .reporting import format_gene_list, save_conclusion
 from .strata import (
@@ -123,7 +124,9 @@ def _fisher(counts: pd.DataFrame, groups: pd.Series) -> pd.DataFrame:
         odds_ratio, p_value = fisher_exact(table, alternative="two-sided")
         odds_ratios.append(odds_ratio)
         p_values.append(p_value)
-        log2_fold_changes.append(np.log2((g1_count + 1.0) / (allogeneic_count + 1.0)))
+        log2_fold_changes.append(
+            historical_fisher_log2_ratio(g1_count, allogeneic_count)
+        )
 
     fdr = (
         multipletests(p_values, method="fdr_bh")[1]

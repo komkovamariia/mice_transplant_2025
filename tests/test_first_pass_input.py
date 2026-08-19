@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
+from src.approach1_set_count import _fisher
 from src.first_pass_input import count_table_to_repertoire, prepare_sample_index
 
 
@@ -9,8 +11,8 @@ def _write_inputs(tmp_path: Path):
     metadata = pd.DataFrame(
         [
             {
-                "chain": "TRA",
-                "sample_no": 1,
+                "chain": "alpha",
+                "sample_no": 100,
                 "sample_id": "g1_m1_thymus_cd4_alpha",
                 "group_no": "g1",
                 "mouse_no": 1,
@@ -18,11 +20,20 @@ def _write_inputs(tmp_path: Path):
                 "subtype": "cd4",
             },
             {
-                "chain": "TRA",
-                "sample_no": 2,
+                "chain": "alpha",
+                "sample_no": 101,
                 "sample_id": "g5_m2_thymus_cd4_alpha",
                 "group_no": "g5",
                 "mouse_no": 2,
+                "source": "thymus",
+                "subtype": "cd4",
+            },
+            {
+                "chain": "beta",
+                "sample_no": 100,
+                "sample_id": "g1_m1_thymus_cd4_beta",
+                "group_no": "g1",
+                "mouse_no": 1,
                 "source": "thymus",
                 "subtype": "cd4",
             },
@@ -33,12 +44,15 @@ def _write_inputs(tmp_path: Path):
 
     export_1 = tmp_path / "sample1.tsv"
     export_2 = tmp_path / "sample2.tsv"
+    export_3 = tmp_path / "sample3.tsv"
     export_1.touch()
     export_2.touch()
+    export_3.touch()
     index = pd.DataFrame(
         [
-            {"sample_id": "TRA-1", "filename": export_1, "chain": "TRA"},
-            {"sample_id": "TRA-2", "filename": export_2, "chain": "TRA"},
+            {"sample_id": "alpha-100", "filename": export_1, "chain": "TRA"},
+            {"sample_id": "alpha-101", "filename": export_2, "chain": "TRA"},
+            {"sample_id": "beta-100", "filename": export_3, "chain": "TRB"},
         ]
     )
     index_path = tmp_path / "clonosets.csv"
@@ -56,6 +70,7 @@ def test_prepare_sample_index_reproduces_historical_id_merge(tmp_path):
         "g5_m2_thymus_cd4_alpha",
     ]
     assert sample_index["group_no"].tolist() == ["g1", "g5"]
+    assert sample_index["chain"].tolist() == ["TRA", "TRA"]
 
 
 def test_count_table_conversion_keeps_positive_functional_trav_rows(tmp_path):
@@ -79,3 +94,31 @@ def test_count_table_conversion_keeps_positive_functional_trav_rows(tmp_path):
     assert repertoire["umi"].sum() == 8
     assert set(repertoire["group"]) == {"g1", "g5"}
     assert repertoire["ckey"].str.startswith("TRA|").all()
+
+
+def test_fisher_effect_reproduces_historical_pooled_count_ratio():
+    counts = pd.DataFrame(
+        {
+            "g1_mouse_1": [4, 1],
+            "g1_mouse_2": [3, 0],
+            "g5_mouse_1": [2, 3],
+            "g6_mouse_1": [1, 1],
+        },
+        index=["TRA|CAVRDSNYQLIW|TRAV4-2", "TRA|CAVRGSALGRLHF|TRAV7D-3"],
+    )
+    groups = pd.Series(
+        {
+            "g1_mouse_1": "g1",
+            "g1_mouse_2": "g1",
+            "g5_mouse_1": "allogeneic",
+            "g6_mouse_1": "allogeneic",
+        }
+    )
+
+    result = _fisher(counts, groups).set_index("feature_id")
+
+    observed = result.loc[
+        "TRA|CAVRDSNYQLIW|TRAV4-2",
+        "fisher_log2fc_g1_vs_allogeneic",
+    ]
+    assert observed == pytest.approx(1.0)

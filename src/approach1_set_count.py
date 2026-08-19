@@ -83,13 +83,13 @@ def _edgeR(counts: pd.DataFrame, groups: pd.Series) -> pd.DataFrame:
             levels=c("allogeneic", "g1")
         )
         y <- DGEList(counts=countData, group=group)
+        y <- calcNormFactors(y)
         design <- model.matrix(~group)
         keep <- filterByExpr(y, design=design)
         if (!any(keep)) {
             stop("No clonotypes passed edgeR expression filtering.")
         }
         y <- y[keep, , keep.lib.sizes=FALSE]
-        y <- calcNormFactors(y)
         y <- estimateDisp(y, design)
         fit <- glmQLFit(y, design)
         test <- glmQLFTest(fit, coef=2)
@@ -121,11 +121,9 @@ def _fisher(counts: pd.DataFrame, groups: pd.Series) -> pd.DataFrame:
             [allogeneic_count, max(total_allogeneic - allogeneic_count, 0)],
         ]
         odds_ratio, p_value = fisher_exact(table, alternative="two-sided")
-        g1_frequency = (g1_count + 0.5) / (total_g1 + 1.0)
-        allogeneic_frequency = (allogeneic_count + 0.5) / (total_allogeneic + 1.0)
         odds_ratios.append(odds_ratio)
         p_values.append(p_value)
-        log2_fold_changes.append(np.log2(g1_frequency / allogeneic_frequency))
+        log2_fold_changes.append(np.log2((g1_count + 1.0) / (allogeneic_count + 1.0)))
 
     fdr = (
         multipletests(p_values, method="fdr_bh")[1]
@@ -367,7 +365,7 @@ def _plot_method_concordance(features: pd.DataFrame, stratum: str) -> None:
         ax.text(
             0.03, 0.97, f"Spearman rho = {rho:.2f}", transform=ax.transAxes, va="top"
         )
-        ax.set_xlabel("Fisher log2 frequency ratio: g1 / g5+g6")
+        ax.set_xlabel("Fisher log2 pooled-count ratio: g1 / g5+g6")
         ax.set_ylabel("edgeR log2 fold change: g1 / g5+g6")
     ax.set_title(f"Fisher and edgeR effect concordance: {STRATUM_LABELS[stratum]}")
     save_figure(fig, APPROACH, stratum, "10_fisher_edger_concordance")

@@ -73,7 +73,9 @@ validation.
 Approaches 2 and 3 use the later derived sample-resolved interface
 `clean_clonotypes_aaV.parquet`. Approach 4 reads the standardized result tables created by
 Approaches 1 to 3. Full details are provided in
-[`docs/notebook_input_provenance.md`](docs/notebook_input_provenance.md).
+[`docs/notebook_input_provenance.md`](docs/notebook_input_provenance.md). The exact
+correspondence between the historical first pass and active Approach 1 is documented in
+[`docs/approach1_historical_equivalence.md`](docs/approach1_historical_equivalence.md).
 
 ## Quick start on HPC
 

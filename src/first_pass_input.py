@@ -89,8 +89,10 @@ def prepare_sample_index(metadata_path: Path, index_path: Path) -> pd.DataFrame:
             f"{metadata_path} is missing metadata columns: {missing_metadata}"
         )
     metadata = metadata.copy()
+    # The historical index keys use the metadata prefixes verbatim, for example
+    # alpha-100 and beta-100. Chain standardization belongs after this merge.
     metadata["sample_id_old"] = (
-        metadata["chain"].astype(str).str.upper().str.strip()
+        metadata["chain"].astype(str).str.strip()
         + "-"
         + metadata["sample_no"].map(_identifier)
     )

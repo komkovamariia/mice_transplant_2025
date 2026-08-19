@@ -15,6 +15,9 @@ outputs/tables/*
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Local environments and editor files.
 .env

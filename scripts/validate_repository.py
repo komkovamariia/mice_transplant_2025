@@ -1,80 +1,247 @@
 #!/usr/bin/env python3
-"""Static repository validation for the article analysis layout."""
+"""Static validation of the publication-oriented repository contract."""
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CYRILLIC = re.compile(r"[\u0400-\u04FF]")
+EXPECTED_STRATA = {
+    "cd4_thymus",
+    "cd4_spleen",
+    "cd8_thymus",
+    "cd8_spleen",
+    "cd4_combined",
+    "cd8_combined",
+}
 EXPECTED_NOTEBOOKS = [
     ROOT / "approaches/01_set_count/set_count_analysis.ipynb",
     ROOT / "approaches/02_sequence_embedding/sequence_embedding_analysis.ipynb",
     ROOT / "approaches/03_clone_alloreactivity/clone_alloreactivity_analysis.ipynb",
     ROOT / "approaches/04_cross_approach/cross_approach_comparison.ipynb",
 ]
-EXPECTED_STRATA = {"cd4_thymus", "cd4_spleen", "cd8_thymus", "cd8_spleen", "cd4_combined", "cd8_combined"}
+ANALYSIS_MODULES = [
+    ROOT / "src/approach1_set_count.py",
+    ROOT / "src/approach2_sequence_embedding.py",
+    ROOT / "src/approach3_clone_alloreactivity.py",
+    ROOT / "src/approach4_cross_approach.py",
+]
+ACTIVE_TEXT_EXTENSIONS = {
+    ".md",
+    ".py",
+    ".ipynb",
+    ".yml",
+    ".yaml",
+    ".txt",
+    ".env",
+}
+FIGURE_EXTENSIONS = {
+    ".png",
+    ".pdf",
+    ".svg",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+}
 
 
 def fail(message: str) -> None:
     raise SystemExit(f"VALIDATION FAILED: {message}")
 
 
-def main() -> int:
-    required = [ROOT / "README.md", ROOT / "RUN_GUIDE_RU.md", ROOT / "scripts/run_analysis.py",
-                ROOT / "src/strata.py", ROOT / "src/runtime.py", *EXPECTED_NOTEBOOKS]
-    missing = [str(p.relative_to(ROOT)) for p in required if not p.exists()]
+def _active_files():
+    excluded_roots = {
+        ".git",
+        "data",
+        "outputs",
+        "project_sources",
+    }
+    for path in ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(ROOT)
+        if relative.parts and relative.parts[0] in excluded_roots:
+            continue
+        yield path, relative
+
+
+def _validate_required_files() -> None:
+    required = [
+        ROOT / "README.md",
+        ROOT / "RUN_GUIDE.md",
+        ROOT / "scripts/run_analysis.py",
+        ROOT / "scripts/validate_repository.py",
+        ROOT / "src/strata.py",
+        ROOT / "src/runtime.py",
+        ROOT / "src/reporting.py",
+        ROOT / ".github/workflows/validation.yml",
+        *EXPECTED_NOTEBOOKS,
+        *ANALYSIS_MODULES,
+    ]
+    missing = [str(path.relative_to(ROOT)) for path in required if not path.exists()]
     if missing:
         fail(f"missing required files: {missing}")
+    if (ROOT / "RUN_GUIDE_RU.md").exists():
+        fail("legacy Russian execution guide remains in the active tree")
 
-    extensions = {".md", ".py", ".ipynb", ".yml", ".yaml", ".txt"}
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in extensions:
+
+def _validate_language_and_paths() -> None:
+    for path, relative in _active_files():
+        relative_text = relative.as_posix()
+        if CYRILLIC.search(relative_text):
+            fail(f"Cyrillic remains in an active path: {relative}")
+        if any(character.isspace() for character in relative.name):
+            fail(f"whitespace remains in an active filename: {relative}")
+
+        if path.suffix.lower() not in ACTIVE_TEXT_EXTENSIONS:
             continue
-        rel = path.relative_to(ROOT)
-        if rel.as_posix() == "RUN_GUIDE_RU.md":
-            continue
-        if any(part in {".git", "outputs"} for part in rel.parts):
-            continue
-        text = path.read_text(errors="ignore")
+        text = path.read_text(encoding="utf-8", errors="ignore")
         if CYRILLIC.search(text):
-            fail(f"Cyrillic text remains in active English file: {rel}")
+            fail(f"Cyrillic text remains in active file: {relative}")
 
-    for path in EXPECTED_NOTEBOOKS:
-        nb = json.loads(path.read_text())
-        code = [c for c in nb["cells"] if c["cell_type"] == "code"]
-        if len(code) < 7:
-            fail(f"{path.relative_to(ROOT)} has too few code cells for stratum-level progress.")
-        joined = "\n".join("".join(c.get("source", [])) for c in nb["cells"])
-        absent = EXPECTED_STRATA.difference(x for x in EXPECTED_STRATA if x in joined)
-        if absent:
-            fail(f"{path.relative_to(ROOT)} does not expose all six strata: {sorted(absent)}")
-        if "DESeq2" in joined or "deseq" in joined.lower():
-            fail(f"stale DESeq2 reference in {path.relative_to(ROOT)}")
+    for path in ROOT.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in FIGURE_EXTENSIONS:
+            continue
+        relative = path.relative_to(ROOT)
+        if not relative.parts or relative.parts[0] != "figures":
+            fail(f"figure file is stored outside figures/: {relative}")
 
-    analysis_modules = [ROOT / "src/approach1_set_count.py", ROOT / "src/approach2_sequence_embedding.py",
-                        ROOT / "src/approach3_clone_alloreactivity.py", ROOT / "src/approach4_cross_approach.py"]
-    for path in analysis_modules:
-        text = path.read_text()
+
+def _validate_python() -> None:
+    for path in [
+        *ANALYSIS_MODULES,
+        ROOT / "src/strata.py",
+        ROOT / "src/runtime.py",
+        ROOT / "src/reporting.py",
+        ROOT / "src/figures.py",
+        ROOT / "scripts/run_analysis.py",
+    ]:
+        try:
+            ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError as error:
+            fail(f"Python syntax error in {path.relative_to(ROOT)}: {error}")
+
+    for path in ANALYSIS_MODULES:
+        text = path.read_text(encoding="utf-8")
         if "plt.show(" in text:
             fail(f"inline-only plotting remains in {path.relative_to(ROOT)}")
-        if text.count("plt.subplots(") != text.count("save_figure("):
-            fail(f"every generated matplotlib figure must be persisted in {path.relative_to(ROOT)} "
-                 f"(subplots={text.count('plt.subplots(')}, saves={text.count('save_figure(')})")
+        subplot_count = text.count("plt.subplots(")
+        save_count = text.count("save_figure(")
+        if subplot_count != save_count:
+            fail(
+                "every matplotlib figure must be persisted in "
+                f"{path.relative_to(ROOT)} "
+                f"(subplots={subplot_count}, saves={save_count})"
+            )
 
-    readme = (ROOT / "README.md").read_text()
-    for token in ("--approach 1", "--approach 2", "--approach 3", "--approach all", "--resume"):
-        if token not in readme:
-            fail(f"README is missing launch command token: {token}")
+    required_effect = "effect_g1_vs_allogeneic"
+    for path in ANALYSIS_MODULES[:3]:
+        if required_effect not in path.read_text(encoding="utf-8"):
+            fail(f"{path.relative_to(ROOT)} lacks the standardized signed-effect field")
 
-    env = (ROOT / "environment.yml").read_text()
-    if "bioconductor-deseq2" in env.lower():
+
+def _validate_notebooks() -> None:
+    for path in EXPECTED_NOTEBOOKS:
+        notebook = json.loads(path.read_text(encoding="utf-8"))
+        cells = notebook.get("cells", [])
+        code_cells = [cell for cell in cells if cell.get("cell_type") == "code"]
+        if len(code_cells) < 7:
+            fail(
+                f"{path.relative_to(ROOT)} has too few code cells "
+                "for stratum-level progress"
+            )
+
+        identifiers = [cell.get("id") for cell in cells if cell.get("id")]
+        if len(identifiers) != len(set(identifiers)):
+            fail(f"duplicate cell IDs in {path.relative_to(ROOT)}")
+
+        joined = "\n".join("".join(cell.get("source", [])) for cell in cells)
+        absent = {stratum for stratum in EXPECTED_STRATA if stratum not in joined}
+        if absent:
+            fail(
+                f"{path.relative_to(ROOT)} does not expose all six "
+                f"strata: {sorted(absent)}"
+            )
+        if "DESeq2" in joined or "deseq" in joined.lower():
+            fail(f"stale DESeq2 reference in {path.relative_to(ROOT)}")
+        if any(cell.get("outputs") for cell in code_cells):
+            fail(
+                f"source notebook contains committed outputs: {path.relative_to(ROOT)}"
+            )
+        if any(cell.get("execution_count") is not None for cell in code_cells):
+            fail(f"source notebook contains execution counts: {path.relative_to(ROOT)}")
+        plotting_tokens = (
+            "plt.show(",
+            "plt.subplots(",
+            "sns.",
+            ".plot(",
+        )
+        if any(token in joined for token in plotting_tokens):
+            fail(
+                f"plotting remains in notebook instead of src/: "
+                f"{path.relative_to(ROOT)}"
+            )
+
+
+def _validate_documentation_and_runtime() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    guide = (ROOT / "RUN_GUIDE.md").read_text(encoding="utf-8")
+    for token in (
+        "--approach 1",
+        "--approach 2",
+        "--approach 3",
+        "--approach 4",
+        "--approach all",
+        "--strata",
+        "--resume",
+        "pipeline.log",
+    ):
+        if token not in readme or token not in guide:
+            fail(f"README.md or RUN_GUIDE.md is missing command token: {token}")
+
+    runner = (ROOT / "scripts/run_analysis.py").read_text(encoding="utf-8")
+    for token in (
+        "[CELL ",
+        "remaining",
+        "DONE",
+        "pipeline.log",
+        "id=",
+        "step=",
+    ):
+        if token not in runner:
+            fail(f"runner lacks progress-log token: {token}")
+
+    strata = (ROOT / "src/strata.py").read_text(encoding="utf-8")
+    for token in (
+        "analysis_unit",
+        "mouse-level thymus + spleen pool",
+        *EXPECTED_STRATA,
+    ):
+        if token not in strata:
+            fail(f"stratification code lacks required token: {token}")
+
+    environment = (ROOT / "environment.yml").read_text(encoding="utf-8")
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    if "bioconductor-deseq2" in environment.lower():
         fail("DESeq2 remains in environment.yml")
-    if "nbclient" not in env.lower():
-        fail("nbclient is required by scripts/run_analysis.py but missing from environment.yml")
+    for token in ("nbclient", "pytest"):
+        if token not in environment.lower():
+            fail(f"environment.yml is missing {token}")
+        if token not in requirements.lower():
+            fail(f"requirements.txt is missing {token}")
 
+
+def main() -> int:
+    _validate_required_files()
+    _validate_language_and_paths()
+    _validate_python()
+    _validate_notebooks()
+    _validate_documentation_and_runtime()
     print("Repository validation passed.")
     return 0
 

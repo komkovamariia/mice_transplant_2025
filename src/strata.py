@@ -1,10 +1,11 @@
-"""Shared data loading and biological stratification for the article analyses."""
+"""Data loading and biological stratification shared by all analyses."""
 
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 
@@ -22,117 +23,244 @@ STRATUM_LABELS = {
     "cd4_spleen": "CD4 T cells, spleen",
     "cd8_thymus": "CD8 T cells, thymus",
     "cd8_spleen": "CD8 T cells, spleen",
-    "cd4_combined": "CD4 T cells, thymus + spleen",
-    "cd8_combined": "CD8 T cells, thymus + spleen",
+    "cd4_combined": "CD4 T cells, mouse-level thymus + spleen pool",
+    "cd8_combined": "CD8 T cells, mouse-level thymus + spleen pool",
 }
 
 REQUIRED_COLUMNS = {
-    "cdr3", "v_gene", "umi", "group", "sample_id", "mouse_id", "source", "subtype"
+    "cdr3",
+    "v_gene",
+    "umi",
+    "group",
+    "sample_id",
+    "mouse_id",
+    "source",
+    "subtype",
 }
+
+_CANONICAL_AA = re.compile(r"^[ACDEFGHIKLMNPQRSTVWY]+$")
 
 
 def repository_root() -> Path:
-    env = os.environ.get("MICE_TCR_REPO")
-    if env:
-        return Path(env).expanduser().resolve()
+    """Return the repository root, including during notebook execution."""
+    configured = os.environ.get("MICE_TCR_REPO")
+    if configured:
+        return Path(configured).expanduser().resolve()
+
     here = Path.cwd().resolve()
     for candidate in (here, *here.parents):
-        if (candidate / "environment.yml").exists() and (candidate / "approaches").exists():
+        if (candidate / "environment.yml").exists() and (
+            candidate / "approaches"
+        ).exists():
             return candidate
     return here
 
 
 def data_dir() -> Path:
-    return Path(os.environ.get("MICE_TCR_DATA_DIR", repository_root() / "data")).expanduser().resolve()
+    return (
+        Path(os.environ.get("MICE_TCR_DATA_DIR", repository_root() / "data"))
+        .expanduser()
+        .resolve()
+    )
 
 
 def clean_repertoire_path() -> Path:
     explicit = os.environ.get("MICE_TCR_CLEAN_PARQUET")
-    return Path(explicit).expanduser().resolve() if explicit else data_dir() / "clean_clonotypes_aaV.parquet"
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    return data_dir() / "clean_clonotypes_aaV.parquet"
 
 
-def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
-    path = Path(path) if path else clean_repertoire_path()
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Canonical repertoire table not found: {path}. "
-            "Set MICE_TCR_DATA_DIR or MICE_TCR_CLEAN_PARQUET."
-        )
-    df = pd.read_parquet(path)
-    missing = sorted(REQUIRED_COLUMNS.difference(df.columns))
-    if missing:
-        raise ValueError(f"{path} is missing required columns: {missing}")
+def _classify(
+    primary: pd.Series,
+    fallback: pd.Series,
+    patterns: dict[str, str],
+) -> pd.Series:
+    """Classify from the explicit field first and use the sample name only as fallback."""
+    primary = primary.fillna("").astype(str).str.lower()
+    fallback = fallback.fillna("").astype(str).str.lower()
+    result = pd.Series(pd.NA, index=primary.index, dtype="object")
 
-    out = df.copy()
-    out["cdr3"] = out["cdr3"].astype(str).str.strip()
-    out["v_gene"] = out["v_gene"].astype(str).str.strip()
-    out["umi"] = pd.to_numeric(out["umi"], errors="coerce").fillna(0).astype(float)
-    out["group"] = out["group"].astype(str).str.lower().str.strip()
-    out["sample_id"] = out["sample_id"].astype(str)
-    out["mouse_id"] = out["mouse_id"].astype(str)
-    out["source"] = out["source"].astype(str)
-    out["subtype"] = out["subtype"].astype(str)
+    primary_hits = {
+        label: primary.str.contains(pattern, regex=True)
+        for label, pattern in patterns.items()
+    }
+    primary_count = sum(primary_hits.values())
+    for label, hit in primary_hits.items():
+        result.loc[hit & primary_count.eq(1)] = label
 
-    out["_cell_subset"] = _infer_cell_subset(out)
-    out["_tissue"] = _infer_tissue(out)
-    out["ckey"] = out["cdr3"] + "|" + out["v_gene"]
-    return out
+    use_fallback = primary_count.eq(0)
+    fallback_hits = {
+        label: fallback.str.contains(pattern, regex=True)
+        for label, pattern in patterns.items()
+    }
+    fallback_count = sum(fallback_hits.values())
+    for label, hit in fallback_hits.items():
+        result.loc[use_fallback & hit & fallback_count.eq(1)] = label
+    return result
 
 
 def _infer_cell_subset(df: pd.DataFrame) -> pd.Series:
-    text = (
-        df["subtype"].fillna("").astype(str)
-        + " "
-        + df["sample_id"].fillna("").astype(str)
-    ).str.lower()
-    out = pd.Series(pd.NA, index=df.index, dtype="object")
-    out[text.str.contains(r"(^|[^a-z0-9])cd4([^a-z0-9]|$)", regex=True)] = "cd4"
-    out[text.str.contains(r"(^|[^a-z0-9])cd8([^a-z0-9]|$)", regex=True)] = "cd8"
-    return out
+    return _classify(
+        df["subtype"],
+        df["sample_id"],
+        {
+            "cd4": r"(?:^|[^a-z0-9])cd4(?:[^a-z0-9]|$)",
+            "cd8": r"(?:^|[^a-z0-9])cd8(?:[^a-z0-9]|$)",
+        },
+    )
 
 
 def _infer_tissue(df: pd.DataFrame) -> pd.Series:
-    text = (
-        df["source"].fillna("").astype(str)
-        + " "
-        + df["sample_id"].fillna("").astype(str)
-    ).str.lower()
-    out = pd.Series(pd.NA, index=df.index, dtype="object")
-    out[text.str.contains("spleen", regex=False)] = "spleen"
-    out[text.str.contains("thym", regex=False)] = "thymus"
+    return _classify(
+        df["source"],
+        df["sample_id"],
+        {
+            "spleen": r"spleen",
+            "thymus": r"thym|allothymus",
+        },
+    )
+
+
+def _validate_sample_assignments(df: pd.DataFrame) -> None:
+    unresolved = df[df["_cell_subset"].isna() | df["_tissue"].isna()][
+        "sample_id"
+    ].unique()
+    if len(unresolved):
+        preview = ", ".join(map(str, unresolved[:8]))
+        raise ValueError(
+            "Every sample must map unambiguously to CD4/CD8 and thymus/spleen. "
+            f"Unresolved sample(s): {preview}"
+        )
+
+    fields = ["mouse_id", "group", "_cell_subset", "_tissue"]
+    inconsistent = []
+    for field in fields:
+        counts = df.groupby("sample_id", observed=True)[field].nunique(dropna=False)
+        inconsistent.extend(
+            (sample_id, field) for sample_id in counts[counts > 1].index
+        )
+    if inconsistent:
+        preview = ", ".join(f"{sample}:{field}" for sample, field in inconsistent[:8])
+        raise ValueError(f"Inconsistent sample metadata detected: {preview}")
+
+
+def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
+    """Load and validate the canonical sample-resolved aaV table."""
+    repertoire_path = Path(path) if path else clean_repertoire_path()
+    if not repertoire_path.exists():
+        raise FileNotFoundError(
+            f"Canonical repertoire table not found: {repertoire_path}. "
+            "Set MICE_TCR_DATA_DIR or MICE_TCR_CLEAN_PARQUET."
+        )
+
+    df = pd.read_parquet(repertoire_path)
+    missing = sorted(REQUIRED_COLUMNS.difference(df.columns))
+    if missing:
+        raise ValueError(f"{repertoire_path} is missing required columns: {missing}")
+
+    out = df.copy()
+    out["cdr3"] = out["cdr3"].fillna("").astype(str).str.strip().str.upper()
+    out["v_gene"] = out["v_gene"].fillna("").astype(str).str.strip()
+    numeric_umi = pd.to_numeric(out["umi"], errors="coerce")
+    invalid_umi = numeric_umi.isna() | numeric_umi.lt(0)
+    if invalid_umi.any():
+        examples = out.loc[invalid_umi, ["sample_id", "umi"]].head(5).to_dict("records")
+        raise ValueError(
+            f"UMI counts must be numeric and non-negative. Examples: {examples}"
+        )
+    out["umi"] = numeric_umi.astype(float)
+
+    invalid_sequence = ~out["cdr3"].str.match(_CANONICAL_AA)
+    invalid_v = out["v_gene"].isin(["", "nan", "None"])
+    if invalid_sequence.any() or invalid_v.any():
+        examples = out.loc[
+            invalid_sequence | invalid_v,
+            ["sample_id", "cdr3", "v_gene"],
+        ].head(5)
+        raise ValueError(
+            "The canonical table contains empty or non-functional aaV clonotypes. "
+            f"Examples: {examples.to_dict('records')}"
+        )
+
+    out = out[out["umi"].gt(0)].copy()
+    if out.empty:
+        raise ValueError("No positive-UMI clonotypes remain after input validation.")
+
+    out["group"] = out["group"].astype(str).str.lower().str.strip()
+    out["sample_id"] = out["sample_id"].astype(str).str.strip()
+    out["mouse_id"] = out["mouse_id"].astype(str).str.strip()
+    out["source"] = out["source"].astype(str).str.strip()
+    out["subtype"] = out["subtype"].astype(str).str.strip()
+    for identifier in ("group", "sample_id", "mouse_id"):
+        invalid_identifier = out[identifier].str.lower().isin({"", "nan", "none"})
+        if invalid_identifier.any():
+            raise ValueError(f"Column '{identifier}' contains missing identifiers.")
+    out["_cell_subset"] = _infer_cell_subset(out)
+    out["_tissue"] = _infer_tissue(out)
+    _validate_sample_assignments(out)
+
+    if "chain" in out.columns:
+        out["chain"] = out["chain"].astype(str).str.upper().str.strip()
+        out["chain"] = out["chain"].replace({"ALPHA": "TRA", "TCRA": "TRA"})
+        unsupported_chains = sorted(set(out["chain"].unique()).difference({"TRA"}))
+        if unsupported_chains:
+            raise ValueError(
+                "The active embedding workflow is TRA-specific. "
+                f"Unsupported chain values: {unsupported_chains}"
+            )
+        out["ckey"] = out["chain"] + "|" + out["cdr3"] + "|" + out["v_gene"]
+    else:
+        out["ckey"] = out["cdr3"] + "|" + out["v_gene"]
     return out
 
 
 def select_stratum(df: pd.DataFrame, stratum: str) -> pd.DataFrame:
+    """Select one stratum and define its independent analysis unit."""
     if stratum not in STRATA:
         raise ValueError(f"Unknown stratum '{stratum}'. Expected one of {STRATA}.")
-    cell, compartment = stratum.split("_", 1)
-    mask = df["_cell_subset"].eq(cell)
+
+    cell_subset, compartment = stratum.split("_", 1)
+    mask = df["_cell_subset"].eq(cell_subset)
     if compartment == "combined":
         mask &= df["_tissue"].isin(["thymus", "spleen"])
     else:
         mask &= df["_tissue"].eq(compartment)
+
     out = df.loc[mask].copy()
     if out.empty:
         raise ValueError(
             f"No clonotypes were assigned to {STRATUM_LABELS[stratum]}. "
-            "Check 'subtype', 'source', and sample naming."
+            "Check subtype, source, and sample naming."
         )
+
+    if compartment == "combined":
+        out["analysis_unit"] = (
+            out["group"] + "|" + out["mouse_id"] + f"|{cell_subset}|combined"
+        )
+    else:
+        out["analysis_unit"] = out["sample_id"]
     return out
 
 
-def validate_strata(df: pd.DataFrame) -> pd.DataFrame:
+def validate_strata(
+    df: pd.DataFrame,
+    strata: Sequence[str] = STRATA,
+) -> pd.DataFrame:
     rows = []
-    for stratum in STRATA:
+    for stratum in strata:
         sub = select_stratum(df, stratum)
-        rows.append({
-            "stratum": stratum,
-            "label": STRATUM_LABELS[stratum],
-            "n_rows": len(sub),
-            "n_samples": sub["sample_id"].nunique(),
-            "n_mice": sub["mouse_id"].nunique(),
-            "groups": ",".join(sorted(sub["group"].dropna().unique())),
-        })
+        rows.append(
+            {
+                "stratum": stratum,
+                "label": STRATUM_LABELS[stratum],
+                "n_rows": len(sub),
+                "n_samples": sub["sample_id"].nunique(),
+                "n_analysis_units": sub["analysis_unit"].nunique(),
+                "n_mice": sub["mouse_id"].nunique(),
+                "groups": ",".join(sorted(sub["group"].dropna().unique())),
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -140,26 +268,46 @@ def requested_strata() -> tuple[str, ...]:
     raw = os.environ.get("MICE_TCR_STRATA", "").strip()
     if not raw or raw.lower() == "all":
         return STRATA
-    chosen = tuple(x.strip().lower() for x in raw.split(",") if x.strip())
-    bad = [x for x in chosen if x not in STRATA]
-    if bad:
-        raise ValueError(f"Unsupported strata: {bad}. Expected any of {STRATA}.")
+
+    chosen = tuple(item.strip().lower() for item in raw.split(",") if item.strip())
+    unsupported = [item for item in chosen if item not in STRATA]
+    if unsupported:
+        raise ValueError(
+            f"Unsupported strata: {unsupported}. Expected any of {STRATA}."
+        )
     return chosen
 
 
-def sample_metadata(df: pd.DataFrame) -> pd.DataFrame:
-    cols = ["sample_id", "mouse_id", "group", "_cell_subset", "_tissue"]
-    optional = [c for c in ("source", "subtype", "treatment") if c in df.columns]
+def analysis_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one metadata row per independent analysis unit."""
+    fields = ["analysis_unit", "mouse_id", "group", "_cell_subset"]
+    metadata = df[fields].drop_duplicates()
+    conflicts = metadata.groupby("analysis_unit").agg(
+        n_mice=("mouse_id", "nunique"),
+        n_groups=("group", "nunique"),
+        n_subsets=("_cell_subset", "nunique"),
+    )
+    bad = conflicts[(conflicts > 1).any(axis=1)]
+    if not bad.empty:
+        raise ValueError(
+            f"Analysis-unit metadata are inconsistent: {bad.index[:8].tolist()}"
+        )
     return (
-        df[cols + optional]
-        .drop_duplicates(subset=["sample_id"])
-        .set_index("sample_id")
+        metadata.drop_duplicates("analysis_unit")
+        .set_index("analysis_unit")
         .sort_index()
     )
 
 
-def ensure_groups(df: pd.DataFrame, required: Iterable[str], context: str) -> None:
+def ensure_groups(
+    df: pd.DataFrame,
+    required: Iterable[str],
+    context: str,
+) -> None:
     present = set(df["group"].dropna().astype(str))
-    missing = [g for g in required if g not in present]
+    missing = [group for group in required if group not in present]
     if missing:
-        raise ValueError(f"{context}: missing biological groups {missing}; present={sorted(present)}.")
+        raise ValueError(
+            f"{context}: missing biological groups {missing}; "
+            f"present={sorted(present)}."
+        )

@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib
 import os
 import re
-from typing import Iterable, Sequence
+from collections.abc import Iterable
 
 _DEFAULT_WORKERS: int | None = None
 _REPSEQ_DEFAULT_WORKERS: int | None = None
@@ -103,8 +103,11 @@ def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int
         print(
             f"Parallel runtime: {n} CPU worker(s)"
             + (f" | affinity={affinity}" if affinity is not None else "")
-            + (f" | SLURM_CPUS_PER_TASK={os.environ.get('SLURM_CPUS_PER_TASK')}"
-               if os.environ.get("SLURM_CPUS_PER_TASK") else "")
+            + (
+                f" | SLURM_CPUS_PER_TASK={os.environ.get('SLURM_CPUS_PER_TASK')}"
+                if os.environ.get("SLURM_CPUS_PER_TASK")
+                else ""
+            )
         )
     return n
 
@@ -150,7 +153,9 @@ def _repseq_parallel_runner(
         return Parallel()(delayed(function)(task) for task in tasks)
 
 
-def configure_repseq_parallelism(n_jobs: int | None = None, *, verbose: bool = True) -> int:
+def configure_repseq_parallelism(
+    n_jobs: int | None = None, *, verbose: bool = True
+) -> int:
     """Make repseq batch/sample calculations use all allocated CPUs safely.
 
     Several repseq modules import ``run_parallel_calculation`` into module scope, so
@@ -176,7 +181,7 @@ def configure_repseq_parallelism(n_jobs: int | None = None, *, verbose: bool = T
         except ImportError:
             continue
         if hasattr(module, "run_parallel_calculation"):
-            setattr(module, "run_parallel_calculation", _repseq_parallel_runner)
+            module.run_parallel_calculation = _repseq_parallel_runner
             patched.append(module_name)
 
     if verbose:
@@ -210,7 +215,9 @@ def parallel_map(
 
     if prefer == "processes":
         with parallel_config(backend="loky", n_jobs=n, inner_max_num_threads=1):
-            return Parallel(batch_size=batch_size)(delayed(function)(item) for item in items)
+            return Parallel(batch_size=batch_size)(
+                delayed(function)(item) for item in items
+            )
 
     if prefer != "threads":
         raise ValueError("prefer must be 'threads' or 'processes'")
@@ -220,7 +227,9 @@ def parallel_map(
     )
 
 
-def permanova_parallel(D, labels, n_perm: int = 9999, seed: int = 0, n_jobs: int | None = None):
+def permanova_parallel(
+    D, labels, n_perm: int = 9999, seed: int = 0, n_jobs: int | None = None
+):
     """Deterministic parallel one-factor PERMANOVA on a distance matrix.
 
     The permutation schedule is generated *once* in the parent process using the given
@@ -242,7 +251,9 @@ def permanova_parallel(D, labels, n_perm: int = 9999, seed: int = 0, n_jobs: int
     uniq, codes = np.unique(labels, return_inverse=True)
     a = len(uniq)
     if a < 2 or n <= a:
-        raise ValueError("PERMANOVA requires at least two groups and residual degrees of freedom")
+        raise ValueError(
+            "PERMANOVA requires at least two groups and residual degrees of freedom"
+        )
 
     D2 = D * D
     upper = np.triu_indices(n, 1)
@@ -280,6 +291,7 @@ def permanova_parallel(D, labels, n_perm: int = 9999, seed: int = 0, n_jobs: int
         exceed = sum(eval_batch(batch) for batch in batches)
     else:
         from joblib import Parallel, delayed, parallel_config
+
         with parallel_config(backend="loky", n_jobs=n_workers, inner_max_num_threads=1):
             exceed = sum(Parallel()(delayed(eval_batch)(batch) for batch in batches))
 

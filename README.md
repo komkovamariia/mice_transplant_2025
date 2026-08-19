@@ -1,21 +1,30 @@
-# Mouse TCR repertoire analysis after allogeneic transplantation
+# Mouse TCRα repertoire analysis after allogeneic transplantation
 
-This repository contains a reproducible, multi-approach analysis of mouse T-cell receptor repertoires in the BALB/c → C57BL/6 transplantation model. The computational design deliberately separates three analytical questions and reconciles them only after each method has produced an independent result.
+This repository provides a reproducible, sample-resolved analysis of mouse T-cell receptor alpha-chain repertoires in the BALB/c → C57BL/6 transplantation model. Three complementary methods are run independently and compared only after each has produced stratum-specific results.
 
-## Analytical design
+## Analysis structure
 
-| Stage | Directory | Question | Primary output |
-|---|---|---|---|
-| 1 | `approaches/01_set_count/` | Which exact aaV clonotypes and V segments differ by set membership and abundance? | edgeR/Fisher clonotype statistics and V-segment ranks |
-| 2 | `approaches/02_sequence_embedding/` | Which sequence-space neighborhoods and whole repertoires shift between g1 and allogeneic groups? | density enrichment, RFF-MMD, PERMANOVA, witness ranks |
-| 3 | `approaches/03_clone_alloreactivity/` | Which individual clonotypes are repeatedly supported by independent allogeneic prevalence, abundance, and convergence signals? | clone-level candidate table and V-segment ranks |
-| 4 | `approaches/04_cross_approach/` | Which V-segment signals are stable across methods and biological compartments? | per-stratum concordance and consensus ranks |
+| Order | Analysis | Primary question | Main outputs |
+|---:|---|---|---|
+| 1 | [`01_set_count`](approaches/01_set_count/) | Which exact aaV clonotypes and V segments differ between g1 and the allogeneic g5+g6 reference? | Set overlap, edgeR, Fisher cross-check |
+| 2 | [`02_sequence_embedding`](approaches/02_sequence_embedding/) | Which local sequence-space regions and whole repertoires shift between the same groups? | Exact density enrichment, RFF-MMD, PERMANOVA, witness scores |
+| 3 | [`03_clone_alloreactivity`](approaches/03_clone_alloreactivity/) | Which individual clonotypes receive repeated mouse-level support? | Prevalence, normalized abundance, convergence, candidate ranking |
+| 4 | [`04_cross_approach`](approaches/04_cross_approach/) | Which V-segment signals recur across methods and biological strata, with concordant direction? | Rank overlap, signed-effect agreement, consensus ranking |
 
-The analyses are performed independently for six prespecified biological strata:
+Approach 4 is an integration stage, not a fourth biological method.
 
-`cd4_thymus`, `cd4_spleen`, `cd8_thymus`, `cd8_spleen`, `cd4_combined`, and `cd8_combined`.
+## Biological strata
 
-The two combined strata contain thymus and spleen samples of the indicated T-cell subset. They do not pool CD4 and CD8 cells.
+Every method produces an independent result for:
+
+- `cd4_thymus`
+- `cd4_spleen`
+- `cd8_thymus`
+- `cd8_spleen`
+- `cd4_combined`
+- `cd8_combined`
+
+The combined strata pool thymus and spleen counts within each mouse. CD4 and CD8 repertoires are never pooled. This mouse-level aggregation prevents two tissues from the same animal from being treated as independent replicates.
 
 ## Repository layout
 
@@ -23,22 +32,15 @@ The two combined strata contain thymus and spleen samples of the indicated T-cel
 .
 ├── approaches/
 │   ├── 01_set_count/
-│   │   ├── README.md
-│   │   └── set_count_analysis.ipynb
 │   ├── 02_sequence_embedding/
-│   │   ├── README.md
-│   │   └── sequence_embedding_analysis.ipynb
 │   ├── 03_clone_alloreactivity/
-│   │   ├── README.md
-│   │   └── clone_alloreactivity_analysis.ipynb
 │   └── 04_cross_approach/
-│       ├── README.md
-│       └── cross_approach_comparison.ipynb
-├── src/                         # Shared analysis code
+├── src/                       # Shared analytical functions
 ├── scripts/
-│   ├── run_analysis.py          # Cell-aware execution driver
-│   └── validate_repository.py   # Static repository checks
-├── figures/
+│   ├── run_analysis.py        # Cell-aware pipeline runner
+│   └── validate_repository.py
+├── tests/                     # Lightweight regression tests
+├── figures/                   # The only figure root
 │   ├── 01_set_count/
 │   ├── 02_sequence_embedding/
 │   ├── 03_clone_alloreactivity/
@@ -49,44 +51,44 @@ The two combined strata contain thymus and spleen samples of the indicated T-cel
 │   ├── logs/
 │   └── cache/
 ├── docs/
-│   └── parallel_execution.md
-├── supplementary/
 ├── environment.yml
 ├── requirements.txt
-└── RUN_GUIDE_RU.md
+└── RUN_GUIDE.md
 ```
 
-All generated figures are written to the single `figures/` hierarchy. Every plotting routine writes both a 300-dpi PNG and a vector PDF. Notebook-only figures are not used as the sole copy of a result.
+Generated figures are saved as 300-dpi PNG and vector PDF files under `figures/<approach>/<stratum>/`. A plot that exists only inside an executed notebook is not considered a pipeline output.
 
-## Input data
+## Input
 
-The canonical input is a sample-resolved aaV clonotype table:
+The canonical input is:
 
 ```text
 data/clean_clonotypes_aaV.parquet
 ```
 
-The minimum required columns are:
+Required columns:
 
 ```text
 cdr3, v_gene, umi, group, sample_id, mouse_id, source, subtype
 ```
 
-`v_germ` and `treatment` are used when available. The code derives CD4/CD8 identity from `subtype` with `sample_id` as a fallback, and derives thymus/spleen identity from `source` with `sample_id` as a fallback. Samples that cannot be assigned unambiguously are not silently inserted into a stratum.
+Optional columns include `v_germ`, `treatment`, and `chain`. When `chain` is supplied, every active record must be annotated as TRA.
 
-The input location can be changed without editing a notebook:
+Input validation rejects non-numeric or negative UMI counts, non-functional CDR3 amino-acid sequences, unresolved CD4/CD8 or tissue assignments, and inconsistent sample metadata. `subtype` and `source` are the primary annotation fields; `sample_id` is used only as a fallback.
 
-```bash
-export MICE_TCR_DATA_DIR=/path/to/data
-```
-
-or:
+To use another data directory:
 
 ```bash
-export MICE_TCR_CLEAN_PARQUET=/path/to/clean_clonotypes_aaV.parquet
+export MICE_TCR_DATA_DIR=/absolute/path/to/data
 ```
 
-Primary sequencing data are not embedded in this repository. A clean execution therefore requires the canonical sample-resolved input table.
+To specify the file directly:
+
+```bash
+export MICE_TCR_CLEAN_PARQUET=/absolute/path/clean_clonotypes_aaV.parquet
+```
+
+Primary sequencing data are supplied separately and are not stored in this repository.
 
 ## Environment
 
@@ -104,37 +106,36 @@ conda env update -n mice-transplant-2025 -f environment.yml --prune
 conda activate mice-transplant-2025
 ```
 
-The count-based model uses edgeR through rpy2. DESeq2 is not part of the active pipeline. `repseq` is installed from a fixed Git commit, and the runtime uses the CPU allocation visible to the current process rather than the physical-node core count.
+Approach 1 uses edgeR through rpy2. The active pipeline does not use DESeq2.
 
-Validate the repository before a long run:
+## Execution
+
+Validate the repository first:
 
 ```bash
 python scripts/validate_repository.py
+python -m pytest -q
 ```
 
-## Running the analyses
-
-The recommended interface is `scripts/run_analysis.py`. It executes notebooks cell by cell, writes a durable executed-notebook checkpoint after every successful code cell, and appends progress to `outputs/logs/`.
-
-Run Approach 1 only:
+Run Approach 1:
 
 ```bash
 python scripts/run_analysis.py --approach 1
 ```
 
-Run Approach 2 only:
+Run Approach 2:
 
 ```bash
 python scripts/run_analysis.py --approach 2
 ```
 
-Run Approach 3 only:
+Run Approach 3:
 
 ```bash
 python scripts/run_analysis.py --approach 3
 ```
 
-Run the cross-approach comparison after all three upstream approaches:
+Compare completed outputs from Approaches 1–3:
 
 ```bash
 python scripts/run_analysis.py --approach 4
@@ -146,13 +147,13 @@ Run the complete pipeline in publication order:
 python scripts/run_analysis.py --approach all
 ```
 
-Run more than one selected approach:
+Run selected approaches:
 
 ```bash
-python scripts/run_analysis.py --approach 1,2
+python scripts/run_analysis.py --approach 1,3
 ```
 
-Run only selected biological strata:
+Run selected strata:
 
 ```bash
 python scripts/run_analysis.py \
@@ -160,91 +161,73 @@ python scripts/run_analysis.py \
   --strata cd4_thymus,cd8_thymus
 ```
 
-Specify the data directory on the command line:
+Pass the input directory explicitly:
 
 ```bash
 python scripts/run_analysis.py \
   --approach all \
-  --data-dir /path/to/data
+  --data-dir /absolute/path/to/data
 ```
 
-### Resume after a failed long run
-
-The execution driver checkpoints completed code-cell IDs and all upstream tables/figures. To resume:
+Resume a failed long run:
 
 ```bash
 python scripts/run_analysis.py --approach 2 --resume
 ```
 
-Bootstrap cells are always re-executed to recreate Python state. Completed analytical cells are skipped only when they are present in the checkpoint. Approach 2 also caches the shared embedding basis under `outputs/cache/02_sequence_embedding/`, so a restart does not require refitting the global sequence-space basis when the canonical clonotype set is unchanged.
+The runner restores saved notebook outputs, re-executes bootstrap cells, and skips completed analytical cells. Approach 2 also validates and reuses its sequence-space cache when the clonotype fingerprint is unchanged.
 
-### Live progress
+## Progress logs
 
-A log line is written when every code cell starts and completes, including the number of cells remaining. Long-running cells emit a heartbeat every 30 seconds. Follow the current analysis with:
+The runner writes a pipeline log and one log per approach:
+
+```text
+outputs/logs/pipeline.log
+outputs/logs/<approach>.log
+```
+
+Each code cell records its position, ID, first executable line, status, elapsed time, and remaining cell count. Long-running cells emit a heartbeat every 30 seconds.
+
+Follow the full pipeline:
+
+```bash
+tail -f outputs/logs/pipeline.log
+```
+
+Follow Approach 2 at cell level:
 
 ```bash
 tail -f outputs/logs/02_sequence_embedding.log
 ```
 
-A typical sequence is:
-
-```text
-[CELL 003/009] START | 6 remaining after this cell
-[CELL 003/009] RUNNING | elapsed=300s
-[CELL 003/009] DONE in 412.7s | 6 code cell(s) not yet checkpointed
-```
-
-For scheduler-level CPU and memory monitoring, see `docs/parallel_execution.md`.
-
 ## Outputs
 
-Each analytical approach writes stratum-specific tables to:
+Each approach writes to:
 
 ```text
 outputs/tables/<approach>/
 ```
 
-Each stratum produces a standardized V-segment ranking containing at least:
+Every stratum produces:
 
-```text
-v_gene, rank, score, stratum
-```
+- a standardized V-segment ranking with `v_gene`, `rank`, `score`, and `stratum`;
+- approach-specific evidence tables;
+- `<stratum>_conclusion.json`;
+- `<stratum>_conclusion.md`;
+- publication-oriented figures under `figures/<approach>/<stratum>/`.
 
-Approach-specific evidence is retained in additional columns. This shared schema is the only input used by the cross-approach ranking layer.
-
-Figures are written to:
-
-```text
-figures/<approach>/<stratum>/
-```
-
-and the global cross-stratum figure is written to:
-
-```text
-figures/04_cross_approach/
-```
-
-Executed notebooks and progress logs are written to:
-
-```text
-outputs/notebooks/
-outputs/logs/
-```
+The cross-approach stage also writes `overall_consensus_v_genes.csv` and `cross_stratum_conclusion.md`.
 
 ## Statistical interpretation
 
-Approach 1 uses exact aaV clonotypes and an edgeR quasi-likelihood model for g1 versus the allogeneic g5+g6 reference; Fisher's exact test is retained as an independent count-based cross-check.
+Approach 1 models g1 versus g5+g6 with edgeR quasi-likelihood inference and uses Fisher's exact test as an independent count-based check.
 
-Approach 2 uses one shared TCREmp/PCA coordinate system, exact k-d-tree neighborhood enrichment, RFF-MMD repertoire distances, deterministic 9,999-permutation PERMANOVA, and witness scoring. The permutation schedule is generated before parallel execution, so the p-value does not depend on worker completion order.
+Approach 2 uses one shared technical TCREmp/PCA basis. Biological tests remain stratum-specific. Exact k-d-tree density enrichment is complemented by RFF-MMD, a deterministic 9,999-permutation two-group PERMANOVA, and witness scoring.
 
-Approach 3 is a prioritization analysis rather than an antigen-specificity classifier. Its integrated score combines allogeneic mouse prevalence, allogeneic-to-g1 abundance shift, and same-V local CDR3 convergence. Sequence physicochemical descriptors are reported for interpretation but are not treated as direct evidence of alloreactivity.
+Approach 3 weights mice equally. Its abundance component is calculated from within-mouse relative abundance, preventing larger libraries or larger experimental groups from dominating the integrated score. The score prioritizes candidates for follow-up and is not a calibrated probability of antigen specificity.
 
-Approach 4 does not force agreement. It reports rank correlation, top-10 overlap, and a normalized consensus rank separately for each biological stratum. A robust biological signal is one that is reproduced across analytical lines and, ideally, across more than one compartment.
+Approach 4 separates rank overlap from effect direction. All method-specific effects are represented on the same g1-versus-allogeneic axis, so opposing directions remain explicit.
 
-Historical PERMANOVA values from the earlier notebook implementation must not be reused: the original helper ignored permuted labels. The active implementation in `src/runtime.py` performs the intended deterministic permutation test, and only regenerated p-values should be reported.
+Historical PERMANOVA values from the earlier notebook implementation must not be reused because the previous helper ignored permuted labels. Only values regenerated by `src/runtime.py` are valid.
 
-## Reproducibility notes
-
-The exact mirpy density backend remains `kdtree`; no approximate-nearest-neighbor substitution is used. CPU parallelism is scheduler-aware and does not alter clonotype definitions, biological contrasts, FDR thresholds, or permutation schedules.
-
-The active repository contains only the current English computational workflow. Earlier notebook and manuscript variants remain available through Git history but are not part of the executable pipeline.
+Further operational details are provided in [RUN_GUIDE.md](RUN_GUIDE.md) and [docs/parallel_execution.md](docs/parallel_execution.md).

@@ -1,8 +1,8 @@
 # Cross-approach comparison
 
-This stage compares the three upstream V-segment rankings without recomputing their underlying statistics.
+This stage compares the three upstream V-segment rankings within each biological stratum.
 
-For each biological stratum, it reports pairwise Spearman rank correlation, top-10 overlap, and a consensus ranking based on normalized within-approach ranks. The final cross-stratum table records how often a V segment appears among the top consensus results.
+It reports pairwise rank correlation, top-10 overlap, signed-effect correlation, directional agreement, and a direction-aware consensus rank. All effects use the same g1-versus-allogeneic orientation. Rank support and effect direction therefore remain distinct.
 
 Run after Approaches 1–3:
 
@@ -10,10 +10,11 @@ Run after Approaches 1–3:
 python scripts/run_analysis.py --approach 4
 ```
 
-or run the complete pipeline:
+Run the complete pipeline:
 
 ```bash
 python scripts/run_analysis.py --approach all
 ```
 
-Tables are written to `outputs/tables/04_cross_approach/`; figures are written to `figures/04_cross_approach/`.
+Tables and conclusions are written to `outputs/tables/04_cross_approach/`. Figures are written to `figures/04_cross_approach/`.
+

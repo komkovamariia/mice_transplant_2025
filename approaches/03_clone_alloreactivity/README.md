@@ -1,13 +1,14 @@
-# Approach 3: clone-level alloreactivity prioritization
+# Approach 3: clone-level evidence prioritization
 
-This approach asks which individual aaV clonotypes receive repeated, sample-resolved support from signals that are independent of the embedding-density test.
+This approach ranks individual aaV clonotypes using three mouse-resolved signals: allogeneic prevalence, within-mouse relative-abundance shift, and same-V CDR3 convergence.
 
-For each biological stratum, clonotypes are scored using allogeneic mouse prevalence, allogeneic-to-g1 abundance shift, and same-V CDR3 convergence. CDR3 length, hydrophobicity, and approximate net charge are retained for interpretation. The integrated score is a prioritization statistic and must not be interpreted as a calibrated probability of antigen specificity or alloreactivity.
+Each mouse receives equal abundance weight. CDR3 length, hydrophobicity, and approximate charge are reported for interpretation only. The integrated score is an evidence ranking and is not a calibrated probability of alloreactivity or antigen specificity.
 
-Run from the repository root:
+Run:
 
 ```bash
 python scripts/run_analysis.py --approach 3
 ```
 
-Tables are written to `outputs/tables/03_clone_alloreactivity/`; figures are written to `figures/03_clone_alloreactivity/<stratum>/`.
+Tables and conclusions are written to `outputs/tables/03_clone_alloreactivity/`. Figures are written to `figures/03_clone_alloreactivity/<stratum>/`.
+

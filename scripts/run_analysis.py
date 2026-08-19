@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute article notebooks with cell-level progress, checkpoints, and optional resume."""
+"""Execute one or more analysis notebooks with cell-level durable progress."""
 
 from __future__ import annotations
 
@@ -15,12 +15,31 @@ import nbformat
 from nbclient import NotebookClient
 
 APPROACHES = {
-    "1": ("01_set_count", "approaches/01_set_count/set_count_analysis.ipynb"),
-    "2": ("02_sequence_embedding", "approaches/02_sequence_embedding/sequence_embedding_analysis.ipynb"),
-    "3": ("03_clone_alloreactivity", "approaches/03_clone_alloreactivity/clone_alloreactivity_analysis.ipynb"),
-    "4": ("04_cross_approach", "approaches/04_cross_approach/cross_approach_comparison.ipynb"),
+    "1": (
+        "01_set_count",
+        "approaches/01_set_count/set_count_analysis.ipynb",
+    ),
+    "2": (
+        "02_sequence_embedding",
+        "approaches/02_sequence_embedding/sequence_embedding_analysis.ipynb",
+    ),
+    "3": (
+        "03_clone_alloreactivity",
+        "approaches/03_clone_alloreactivity/clone_alloreactivity_analysis.ipynb",
+    ),
+    "4": (
+        "04_cross_approach",
+        "approaches/04_cross_approach/cross_approach_comparison.ipynb",
+    ),
 }
-ALIASES = {"set-count": "1", "embedding": "2", "clone": "3", "compare": "4", "cross": "4"}
+ALIASES = {
+    "set-count": "1",
+    "embedding": "2",
+    "clone": "3",
+    "compare": "4",
+    "comparison": "4",
+    "cross": "4",
+}
 
 
 def repo_root() -> Path:
@@ -32,132 +51,311 @@ class Logger:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self._lock = threading.Lock()
-        self._fh = path.open("a", buffering=1)
+        self._handle = path.open(
+            "a",
+            buffering=1,
+            encoding="utf-8",
+        )
 
     def write(self, message: str) -> None:
-        stamp = datetime.now().astimezone().isoformat(timespec="seconds")
-        line = f"{stamp} | {message}"
+        timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+        line = f"{timestamp} | {message}"
         with self._lock:
             print(line, flush=True)
-            self._fh.write(line + "\n")
-            self._fh.flush()
+            self._handle.write(line + "\n")
+            self._handle.flush()
 
     def close(self) -> None:
-        self._fh.close()
+        self._handle.close()
 
 
 @contextlib.contextmanager
 def temporary_env(updates: dict[str, str]):
-    old = {k: os.environ.get(k) for k in updates}
+    previous = {key: os.environ.get(key) for key in updates}
     os.environ.update(updates)
     try:
         yield
     finally:
-        for key, value in old.items():
+        for key, value in previous.items():
             if value is None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
 
 
-def _heartbeat(logger: Logger, stop: threading.Event, label: str, started: float) -> None:
+def _heartbeat(
+    logger: Logger,
+    stop: threading.Event,
+    label: str,
+    started: float,
+) -> None:
     while not stop.wait(30):
         logger.write(f"{label} RUNNING | elapsed={time.monotonic() - started:.0f}s")
 
 
-def _save_checkpoint(nb, path: Path, completed_ids: set[str]) -> None:
-    nb.metadata.setdefault("article_runner", {})
-    nb.metadata["article_runner"]["completed_cell_ids"] = sorted(completed_ids)
-    nb.metadata["article_runner"]["updated_at"] = datetime.now().astimezone().isoformat()
+def _cell_description(cell) -> str:
+    configured = str(cell.metadata.get("analysis_step", "")).strip()
+    if configured:
+        return configured[:100]
+
+    source = "".join(cell.get("source", []))
+    first_line = next(
+        (line.strip() for line in source.splitlines() if line.strip()),
+        "code cell",
+    )
+    return first_line[:100]
+
+
+def _save_checkpoint(
+    notebook,
+    path: Path,
+    completed_ids: set[str],
+) -> None:
+    notebook.metadata.setdefault("article_runner", {})
+    notebook.metadata["article_runner"]["completed_cell_ids"] = sorted(completed_ids)
+    notebook.metadata["article_runner"]["updated_at"] = (
+        datetime.now().astimezone().isoformat()
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    nbformat.write(nb, path)
+    nbformat.write(notebook, path)
 
 
-def execute_notebook(notebook_path: Path, approach_name: str, *, strata: str, data_dir: Path | None, resume: bool) -> Path:
+def _restore_checkpoint_outputs(
+    source_notebook,
+    checkpoint_notebook,
+    completed_ids: set[str],
+) -> None:
+    old_cells = {
+        cell.id: cell for cell in checkpoint_notebook.cells if cell.cell_type == "code"
+    }
+    for cell in source_notebook.cells:
+        if cell.cell_type != "code" or cell.id not in completed_ids:
+            continue
+        old = old_cells.get(cell.id)
+        if old is None:
+            continue
+        cell["outputs"] = old.get("outputs", [])
+        cell["execution_count"] = old.get("execution_count")
+
+
+def execute_notebook(
+    notebook_path: Path,
+    approach_name: str,
+    *,
+    strata: str,
+    data_dir: Path | None,
+    resume: bool,
+) -> Path:
     root = repo_root()
-    source_nb = nbformat.read(notebook_path, as_version=4)
+    notebook = nbformat.read(notebook_path, as_version=4)
     output = root / "outputs" / "notebooks" / f"{approach_name}.executed.ipynb"
     log_path = root / "outputs" / "logs" / f"{approach_name}.log"
     logger = Logger(log_path)
 
+    code_cells = [cell for cell in notebook.cells if cell.cell_type == "code"]
+    current_ids = {cell.id for cell in code_cells}
     completed: set[str] = set()
     if resume and output.exists():
-        old_nb = nbformat.read(output, as_version=4)
-        completed.update(old_nb.metadata.get("article_runner", {}).get("completed_cell_ids", []))
-        logger.write(f"RESUME requested | {len(completed)} previously completed cell(s) found")
+        checkpoint = nbformat.read(output, as_version=4)
+        completed = set(
+            checkpoint.metadata.get(
+                "article_runner",
+                {},
+            ).get("completed_cell_ids", [])
+        )
+        completed.intersection_update(current_ids)
+        _restore_checkpoint_outputs(
+            notebook,
+            checkpoint,
+            completed,
+        )
+        logger.write(
+            f"RESUME requested | {len(completed)} valid completed cell(s) restored"
+        )
 
-    env = {"MICE_TCR_REPO": str(root), "MICE_TCR_STRATA": strata}
+    environment = {
+        "MICE_TCR_REPO": str(root),
+        "MICE_TCR_STRATA": strata,
+    }
     if data_dir is not None:
-        env["MICE_TCR_DATA_DIR"] = str(data_dir.resolve())
+        environment["MICE_TCR_DATA_DIR"] = str(data_dir.resolve())
 
-    code_cells = [c for c in source_nb.cells if c.cell_type == "code"]
     total = len(code_cells)
-    ordinal = {c.id: i + 1 for i, c in enumerate(code_cells)}
-    logger.write(f"START {approach_name} | notebook={notebook_path.relative_to(root)} | code_cells={total} | strata={strata}")
+    ordinal = {cell.id: index + 1 for index, cell in enumerate(code_cells)}
+    logger.write(
+        f"START {approach_name} | "
+        f"notebook={notebook_path.relative_to(root)} | "
+        f"code_cells={total} | strata={strata}"
+    )
 
-    with temporary_env(env):
-        client = NotebookClient(source_nb, timeout=None, kernel_name="python3",
-                                resources={"metadata": {"path": str(root)}}, allow_errors=False)
+    with temporary_env(environment):
+        client = NotebookClient(
+            notebook,
+            timeout=None,
+            kernel_name="python3",
+            resources={"metadata": {"path": str(root)}},
+            allow_errors=False,
+        )
         try:
             with client.setup_kernel(cwd=str(root)):
-                for idx, cell in enumerate(source_nb.cells):
+                for notebook_index, cell in enumerate(notebook.cells):
                     if cell.cell_type != "code":
                         continue
-                    pos = ordinal[cell.id]
-                    remaining = total - pos
+
+                    position = ordinal[cell.id]
+                    remaining_after = total - position
                     bootstrap = "bootstrap" in set(cell.metadata.get("tags", []))
+                    description = _cell_description(cell)
+                    label = (
+                        f"[CELL {position:03d}/{total:03d}] "
+                        f"id={cell.id} | step={description}"
+                    )
                     if resume and cell.id in completed and not bootstrap:
-                        logger.write(f"[CELL {pos:03d}/{total:03d}] SKIP completed checkpoint | {remaining} remaining")
+                        logger.write(
+                            f"{label} | SKIP completed checkpoint | "
+                            f"{remaining_after} position(s) remain"
+                        )
                         continue
 
-                    label = f"[CELL {pos:03d}/{total:03d}]"
                     started = time.monotonic()
-                    logger.write(f"{label} START | {remaining} remaining after this cell")
+                    logger.write(
+                        f"{label} | START | "
+                        f"{remaining_after} position(s) remain after this cell"
+                    )
                     stop = threading.Event()
-                    beat = threading.Thread(target=_heartbeat, args=(logger, stop, label, started), daemon=True)
-                    beat.start()
+                    heartbeat = threading.Thread(
+                        target=_heartbeat,
+                        args=(logger, stop, label, started),
+                        daemon=True,
+                    )
+                    heartbeat.start()
                     try:
-                        client.execute_cell(cell, idx, store_history=True)
+                        client.execute_cell(
+                            cell,
+                            notebook_index,
+                            store_history=True,
+                        )
                     except BaseException:
-                        stop.set(); beat.join(timeout=1)
-                        logger.write(f"{label} FAILED after {time.monotonic() - started:.1f}s")
-                        _save_checkpoint(source_nb, output, completed)
+                        stop.set()
+                        heartbeat.join(timeout=1)
+                        logger.write(
+                            f"{label} | FAILED after {time.monotonic() - started:.1f}s"
+                        )
+                        _save_checkpoint(
+                            notebook,
+                            output,
+                            completed,
+                        )
                         raise
                     else:
-                        stop.set(); beat.join(timeout=1)
+                        stop.set()
+                        heartbeat.join(timeout=1)
                         completed.add(cell.id)
-                        logger.write(f"{label} DONE in {time.monotonic() - started:.1f}s | {total - len(completed)} code cell(s) not yet checkpointed")
-                        _save_checkpoint(source_nb, output, completed)
+                        remaining_uncheckpointed = len(
+                            current_ids.difference(completed)
+                        )
+                        logger.write(
+                            f"{label} | DONE in "
+                            f"{time.monotonic() - started:.1f}s | "
+                            f"{remaining_uncheckpointed} code cell(s) "
+                            "not yet checkpointed"
+                        )
+                        _save_checkpoint(
+                            notebook,
+                            output,
+                            completed,
+                        )
         finally:
-            logger.write(f"CHECKPOINT {output.relative_to(root)} | completed={len(completed)}/{total}")
+            logger.write(
+                f"CHECKPOINT {output.relative_to(root)} | "
+                f"completed={len(completed)}/{total}"
+            )
             logger.close()
     return output
 
 
 def resolve_sequence(value: str) -> list[str]:
-    value = ALIASES.get(value.lower(), value.lower())
-    if value == "all":
+    normalized = ALIASES.get(value.lower(), value.lower())
+    if normalized == "all":
         return ["1", "2", "3", "4"]
-    parts = [ALIASES.get(x.strip().lower(), x.strip().lower()) for x in value.split(",")]
-    bad = [x for x in parts if x not in APPROACHES]
-    if bad:
-        raise SystemExit(f"Unknown approach value(s): {bad}. Use 1,2,3,4,all.")
-    return parts
+
+    selected = [
+        ALIASES.get(item.strip().lower(), item.strip().lower())
+        for item in normalized.split(",")
+        if item.strip()
+    ]
+    unsupported = [item for item in selected if item not in APPROACHES]
+    if unsupported:
+        raise SystemExit(f"Unknown approach value(s): {unsupported}. Use 1,2,3,4,all.")
+    return list(dict.fromkeys(selected))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run one analytical approach or the complete article pipeline.")
-    parser.add_argument("--approach", default="all", help="1, 2, 3, 4/compare, comma-separated values, or all (default).")
-    parser.add_argument("--strata", default="all", help="all or comma-separated canonical strata.")
-    parser.add_argument("--data-dir", type=Path, help="Directory containing clean_clonotypes_aaV.parquet.")
-    parser.add_argument("--resume", action="store_true",
-                        help="Re-run bootstrap cells, then skip completed non-bootstrap cells. Tables and figures remain durable checkpoints.")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run one analytical approach, selected approaches, "
+            "or the complete publication pipeline."
+        )
+    )
+    parser.add_argument(
+        "--approach",
+        default="all",
+        help=("1, 2, 3, 4/compare, comma-separated values, or all (default)."),
+    )
+    parser.add_argument(
+        "--strata",
+        default="all",
+        help="all or comma-separated canonical biological strata.",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        help="Directory containing clean_clonotypes_aaV.parquet.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Restore checkpoint outputs, re-run bootstrap cells, "
+            "and skip completed analytical cells."
+        ),
+    )
+    arguments = parser.parse_args()
 
     root = repo_root()
-    for key in resolve_sequence(args.approach):
-        name, relative = APPROACHES[key]
-        execute_notebook(root / relative, name, strata=args.strata, data_dir=args.data_dir, resume=args.resume)
+    selected = resolve_sequence(arguments.approach)
+    pipeline_logger = Logger(root / "outputs" / "logs" / "pipeline.log")
+    pipeline_logger.write(
+        f"PIPELINE START | approaches={','.join(selected)} | strata={arguments.strata}"
+    )
+    try:
+        for position, key in enumerate(selected, start=1):
+            name, relative_path = APPROACHES[key]
+            remaining = len(selected) - position
+            pipeline_logger.write(
+                f"APPROACH {position}/{len(selected)} START | "
+                f"{name} | {remaining} approach(es) remain after this"
+            )
+            try:
+                output = execute_notebook(
+                    root / relative_path,
+                    name,
+                    strata=arguments.strata,
+                    data_dir=arguments.data_dir,
+                    resume=arguments.resume,
+                )
+            except BaseException:
+                pipeline_logger.write(
+                    f"APPROACH {position}/{len(selected)} FAILED | {name}"
+                )
+                raise
+            pipeline_logger.write(
+                f"APPROACH {position}/{len(selected)} DONE | "
+                f"{name} | output={output.relative_to(root)}"
+            )
+    finally:
+        pipeline_logger.write("PIPELINE END")
+        pipeline_logger.close()
     return 0
 
 

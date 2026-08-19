@@ -3,7 +3,7 @@
 mirpy-lib==3.4.0
 numpy==2.5.1
 pandas==3.0.3
-polars==1.43.0
+polars==1.43.2
 scipy==1.18.0
 scikit-learn==1.9.0
 statsmodels>=0.14,<0.15
@@ -27,5 +27,6 @@ nbformat==5.10.4
 nbclient>=0.10,<0.11
 nbconvert>=7.16,<8
 ipykernel>=6.29,<7
+pytest>=8.3,<9
 rpy2==3.6.7
 repseq @ git+https://github.com/mmjmike/repseq.git@1c464120ac0675608178608af531f90fcba17deb

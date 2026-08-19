@@ -37,20 +37,19 @@ jobs:
           def save(path, nb):
               Path(path).write_text(json.dumps(nb, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
 
-          # Fix a pre-existing motif-cell blocker: `enr` is an EnrichmentResult;
-          # `enriched` is the exact filtered DataFrame intended here.
+          # Pre-existing execution bug: enr is mirpy.EnrichmentResult, while enriched is the
+          # exact q<0.05/fold>1 DataFrame that this motif block is meant to subset.
           p = 'mirpy_analysis.ipynb'
           nb = load(p)
-          c = get_cell(nb, '205e3630')
+          c = get_cell(nb, 'f785b95b')
           s = text(c).replace(
-              'sub=enr[enr["v_gene"].isin(topv)]',
-              'sub=enriched[enriched["v_gene"].isin(topv)].copy()',
+              'sub = enr[enr["v_gene"]==v]',
+              'sub = enriched[enriched["v_gene"]==v].copy()',
           )
           put(c, s)
           save(p, nb)
 
-          # Make the Study2 helper import portable when the notebook is opened from
-          # study2_alloreactivity/ rather than the repository root.
+          # Study2 may be launched from repo root or from study2_alloreactivity/.
           p = 'study2_alloreactivity/alloreactivity_study.ipynb'
           nb = load(p)
           c = get_cell(nb, '386b65e3')
@@ -69,7 +68,6 @@ jobs:
           put(c, s)
           save(p, nb)
 
-          # Lightweight invariants that do not depend on notebook magics or data files.
           mir = Path('mirpy_analysis.ipynb').read_text(encoding='utf-8')
           st2 = Path('study2_alloreactivity/alloreactivity_study.ipynb').read_text(encoding='utf-8')
           venn = Path('venn_original.ipynb').read_text(encoding='utf-8')
@@ -78,7 +76,7 @@ jobs:
           assert 'configure_repseq_parallelism(N_WORKERS)' in venn
           assert 'permanova_parallel as permanova' in mir
           assert 'threads=0' not in mir
-          assert 'sub=enr[enr[' not in mir
+          assert 'sub = enr[enr["v_gene"]==v]' not in mir
           assert 'mirpy_density_basis.joblib' in mir
           assert 'configure_repseq_parallelism(N_WORKERS)' in st2
           assert 'parallel_map(_hill_one' in st2

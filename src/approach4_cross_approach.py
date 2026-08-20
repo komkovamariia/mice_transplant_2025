@@ -19,17 +19,20 @@ APPROACH = "04_cross_approach"
 SOURCES = {
     "set_count": {
         "folder": "01_set_count",
-        "effect_column": "mean_effect_g1_vs_allogeneic",
-        "ranking_suffix": "trav_ranking",
+        "effect_column": "mean_edger_log2fc",
+        "rank_column": "stratum_rank",
+        "relative_path": "{stratum}/trav_ranking.csv",
     },
     "sequence_embedding": {
         "folder": "02_sequence_embedding",
         "effect_column": "median_effect_g1_vs_allogeneic",
+        "rank_column": "rank",
         "ranking_suffix": "v_gene_ranking",
     },
     "clone_alloreactivity": {
         "folder": "03_clone_alloreactivity",
         "effect_column": "mean_effect_g1_vs_allogeneic",
+        "rank_column": "rank",
         "ranking_suffix": "v_gene_ranking",
     },
 }
@@ -49,22 +52,32 @@ def load_rankings(stratum: str) -> dict[str, pd.DataFrame]:
     rankings = {}
     missing = []
     for name, specification in SOURCES.items():
-        path = _ranking_path(
-            specification["folder"],
-            stratum,
-            specification["ranking_suffix"],
-        )
+        if "relative_path" in specification:
+            path = (
+                repository_root()
+                / "results"
+                / specification["folder"]
+                / specification["relative_path"].format(stratum=stratum)
+            )
+        else:
+            path = _ranking_path(
+                specification["folder"],
+                stratum,
+                specification["ranking_suffix"],
+            )
         if not path.exists():
             missing.append(str(path))
             continue
 
         frame = pd.read_csv(path)
         effect_column = specification["effect_column"]
-        required = {"v_gene", "rank", effect_column}
+        rank_column = specification["rank_column"]
+        required = {"v_gene", rank_column, effect_column}
         if not required.issubset(frame.columns):
             raise ValueError(f"{path} must contain {sorted(required)}.")
         rankings[name] = (
-            frame[["v_gene", "rank", effect_column]]
+            frame[["v_gene", rank_column, effect_column]]
+            .rename(columns={rank_column: "rank"})
             .dropna(subset=["v_gene", "rank"])
             .drop_duplicates("v_gene")
             .rename(columns={effect_column: (f"{name}_effect_g1_vs_allogeneic")})

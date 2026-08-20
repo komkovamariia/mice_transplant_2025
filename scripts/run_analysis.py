@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute one or more analysis notebooks with cell-level durable progress."""
+"""Execute the restored notebook workflow with durable cell-level logging."""
 
 from __future__ import annotations
 
@@ -12,28 +12,31 @@ from datetime import datetime
 from pathlib import Path
 
 import nbformat
+import pandas as pd
 from nbclient import NotebookClient
 
+
+STRATUM_RUNS = (
+    ("01_cd4_thymus", "cd4_thymus"),
+    ("02_cd8_thymus", "cd8_thymus"),
+    ("03_cd4_spleen", "cd4_spleen"),
+    ("04_cd8_spleen", "cd8_spleen"),
+    ("05_cd4_thymus_spleen", "cd4_combined"),
+    ("06_cd8_thymus_spleen", "cd8_combined"),
+    ("07_thymus_cd4_cd8", "thymus_combined"),
+    ("08_spleen_cd4_cd8", "spleen_combined"),
+)
+STRATUM_BY_KEY = {key: stem for stem, key in STRATUM_RUNS}
+
 APPROACHES = {
-    "1": (
-        "01_set_count",
-        "notebooks/01_set_count_analysis.ipynb",
-    ),
-    "2": (
-        "02_sequence_embedding",
-        "notebooks/02_sequence_embedding_analysis.ipynb",
-    ),
-    "3": (
-        "03_clone_alloreactivity",
-        "notebooks/03_clone_alloreactivity_analysis.ipynb",
-    ),
-    "4": (
-        "04_cross_approach",
-        "notebooks/04_cross_approach_comparison.ipynb",
-    ),
+    "1": ("01_set_count", "venn_original.ipynb"),
+    "2": ("02_sequence_embedding", "notebooks/02_sequence_embedding_analysis.ipynb"),
+    "3": ("03_clone_alloreactivity", "notebooks/03_clone_alloreactivity_analysis.ipynb"),
+    "4": ("04_cross_approach", "notebooks/04_cross_approach_comparison.ipynb"),
 }
 ALIASES = {
     "set-count": "1",
+    "venn": "1",
     "embedding": "2",
     "clone": "3",
     "compare": "4",
@@ -51,11 +54,7 @@ class Logger:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self._lock = threading.Lock()
-        self._handle = path.open(
-            "a",
-            buffering=1,
-            encoding="utf-8",
-        )
+        self._handle = path.open("a", buffering=1, encoding="utf-8")
 
     def write(self, message: str) -> None:
         timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -97,7 +96,6 @@ def _cell_description(cell) -> str:
     configured = str(cell.metadata.get("analysis_step", "")).strip()
     if configured:
         return configured[:100]
-
     source = "".join(cell.get("source", []))
     first_line = next(
         (line.strip() for line in source.splitlines() if line.strip()),
@@ -106,11 +104,7 @@ def _cell_description(cell) -> str:
     return first_line[:100]
 
 
-def _save_checkpoint(
-    notebook,
-    path: Path,
-    completed_ids: set[str],
-) -> None:
+def _save_checkpoint(notebook, path: Path, completed_ids: set[str]) -> None:
     notebook.metadata.setdefault("article_runner", {})
     notebook.metadata["article_runner"]["completed_cell_ids"] = sorted(completed_ids)
     notebook.metadata["article_runner"]["updated_at"] = (
@@ -140,18 +134,15 @@ def _restore_checkpoint_outputs(
 
 def execute_notebook(
     notebook_path: Path,
-    approach_name: str,
+    artifact_stem: str,
     *,
-    strata: str,
-    data_dir: Path | None,
-    metadata_csv: Path | None,
-    clonoset_index: Path | None,
+    environment: dict[str, str],
     resume: bool,
 ) -> Path:
     root = repo_root()
     notebook = nbformat.read(notebook_path, as_version=4)
-    output = root / "results" / "executed_notebooks" / f"{approach_name}.executed.ipynb"
-    log_path = root / "results" / "logs" / f"{approach_name}.log"
+    output = root / "audit_runs" / f"{artifact_stem}.executed.ipynb"
+    log_path = root / "logs" / f"{artifact_stem}.log"
     logger = Logger(log_path)
 
     code_cells = [cell for cell in notebook.cells if cell.cell_type == "code"]
@@ -160,41 +151,26 @@ def execute_notebook(
     if resume and output.exists():
         checkpoint = nbformat.read(output, as_version=4)
         completed = set(
-            checkpoint.metadata.get(
-                "article_runner",
-                {},
-            ).get("completed_cell_ids", [])
+            checkpoint.metadata.get("article_runner", {}).get(
+                "completed_cell_ids", []
+            )
         )
         completed.intersection_update(current_ids)
-        _restore_checkpoint_outputs(
-            notebook,
-            checkpoint,
-            completed,
-        )
+        _restore_checkpoint_outputs(notebook, checkpoint, completed)
         logger.write(
-            f"RESUME requested | {len(completed)} valid completed cell(s) restored"
+            "RESUME requested | notebook state will be replayed from the first cell | "
+            f"{len(completed)} prior completion marker(s) found"
         )
 
-    environment = {
-        "MICE_TCR_REPO": str(root),
-        "MICE_TCR_STRATA": strata,
-    }
-    if data_dir is not None:
-        environment["MICE_TCR_DATA_DIR"] = str(data_dir.resolve())
-    if metadata_csv is not None:
-        environment["MICE_TCR_METADATA_CSV"] = str(metadata_csv.resolve())
-    if clonoset_index is not None:
-        environment["MICE_TCR_CLONOSET_INDEX"] = str(clonoset_index.resolve())
-
+    run_environment = {"MICE_TCR_REPO": str(root), **environment}
     total = len(code_cells)
     ordinal = {cell.id: index + 1 for index, cell in enumerate(code_cells)}
     logger.write(
-        f"START {approach_name} | "
-        f"notebook={notebook_path.relative_to(root)} | "
-        f"code_cells={total} | strata={strata}"
+        f"START {artifact_stem} | notebook={notebook_path.relative_to(root)} | "
+        f"code_cells={total} | stratum={environment.get('MICE_TCR_STRATUM', 'multiple')}"
     )
 
-    with temporary_env(environment):
+    with temporary_env(run_environment):
         client = NotebookClient(
             notebook,
             timeout=None,
@@ -210,23 +186,16 @@ def execute_notebook(
 
                     position = ordinal[cell.id]
                     remaining_after = total - position
-                    bootstrap = "bootstrap" in set(cell.metadata.get("tags", []))
                     description = _cell_description(cell)
                     label = (
                         f"[CELL {position:03d}/{total:03d}] "
                         f"id={cell.id} | step={description}"
                     )
-                    if resume and cell.id in completed and not bootstrap:
-                        logger.write(
-                            f"{label} | SKIP completed checkpoint | "
-                            f"{remaining_after} position(s) remain"
-                        )
-                        continue
-
+                    phase = "REPLAY" if resume and cell.id in completed else "START"
                     started = time.monotonic()
                     logger.write(
-                        f"{label} | START | "
-                        f"{remaining_after} position(s) remain after this cell"
+                        f"{label} | {phase} | "
+                        f"{remaining_after} code cell(s) remain after this cell"
                     )
                     stop = threading.Event()
                     heartbeat = threading.Thread(
@@ -236,22 +205,14 @@ def execute_notebook(
                     )
                     heartbeat.start()
                     try:
-                        client.execute_cell(
-                            cell,
-                            notebook_index,
-                            store_history=True,
-                        )
+                        client.execute_cell(cell, notebook_index, store_history=True)
                     except BaseException:
                         stop.set()
                         heartbeat.join(timeout=1)
                         logger.write(
                             f"{label} | FAILED after {time.monotonic() - started:.1f}s"
                         )
-                        _save_checkpoint(
-                            notebook,
-                            output,
-                            completed,
-                        )
+                        _save_checkpoint(notebook, output, completed)
                         raise
                     else:
                         stop.set()
@@ -261,20 +222,13 @@ def execute_notebook(
                             current_ids.difference(completed)
                         )
                         logger.write(
-                            f"{label} | DONE in "
-                            f"{time.monotonic() - started:.1f}s | "
-                            f"{remaining_uncheckpointed} code cell(s) "
-                            "not yet checkpointed"
+                            f"{label} | DONE in {time.monotonic() - started:.1f}s | "
+                            f"{remaining_uncheckpointed} code cell(s) not yet checkpointed"
                         )
-                        _save_checkpoint(
-                            notebook,
-                            output,
-                            completed,
-                        )
+                        _save_checkpoint(notebook, output, completed)
         finally:
             logger.write(
-                f"CHECKPOINT {output.relative_to(root)} | "
-                f"completed={len(completed)}/{total}"
+                f"CHECKPOINT {output.relative_to(root)} | completed={len(completed)}/{total}"
             )
             logger.close()
     return output
@@ -284,7 +238,6 @@ def resolve_sequence(value: str) -> list[str]:
     normalized = ALIASES.get(value.lower(), value.lower())
     if normalized == "all":
         return ["1", "2", "3", "4"]
-
     selected = [
         ALIASES.get(item.strip().lower(), item.strip().lower())
         for item in normalized.split(",")
@@ -296,81 +249,181 @@ def resolve_sequence(value: str) -> list[str]:
     return list(dict.fromkeys(selected))
 
 
+def resolve_strata(value: str) -> list[str]:
+    if value.strip().lower() == "all":
+        return [key for _, key in STRATUM_RUNS]
+    selected = [item.strip().lower() for item in value.split(",") if item.strip()]
+    unsupported = [item for item in selected if item not in STRATUM_BY_KEY]
+    if unsupported:
+        raise SystemExit(
+            f"Unknown stratum value(s): {unsupported}. Expected: "
+            + ", ".join(STRATUM_BY_KEY)
+        )
+    return list(dict.fromkeys(selected))
+
+
+def _base_environment(arguments) -> dict[str, str]:
+    environment = {}
+    if arguments.data_dir is not None:
+        environment["MICE_TCR_DATA_DIR"] = str(arguments.data_dir.resolve())
+    if arguments.metadata_csv is not None:
+        environment["MICE_TCR_METADATA_CSV"] = str(
+            arguments.metadata_csv.resolve()
+        )
+    if arguments.clonoset_index is not None:
+        environment["MICE_TCR_CLONOSET_INDEX"] = str(
+            arguments.clonoset_index.resolve()
+        )
+    if arguments.working_dir is not None:
+        environment["MICE_TCR_WORKING_DIR"] = str(arguments.working_dir.resolve())
+    return environment
+
+
+def verify_first_approach_outputs(selected_strata: list[str]) -> None:
+    """Fail immediately when an executed notebook, table, or displayed figure is absent."""
+    root = repo_root()
+    missing = []
+    for stratum in selected_strata:
+        stem = STRATUM_BY_KEY[stratum]
+        required = [
+            root / "audit_runs" / f"{stem}.executed.ipynb",
+            root / "logs" / f"{stem}.log",
+            root / "results" / "01_set_count" / stratum / "run_summary.json",
+            root / "results" / "01_set_count" / stratum / "trav_ranking.csv",
+            root / "results" / "01_set_count" / stratum / "distinctive_trav.csv",
+            root / "results" / "01_set_count" / stratum / "figure_manifest.csv",
+        ]
+        missing.extend(path for path in required if not path.is_file())
+
+        manifest_path = required[-1]
+        if not manifest_path.is_file():
+            continue
+        manifest = pd.read_csv(manifest_path)
+        if manifest.empty:
+            raise RuntimeError(f"Figure manifest is empty for {stratum}.")
+        for column in ("png", "pdf"):
+            for relative in manifest[column].dropna().astype(str):
+                if not (root / relative).is_file():
+                    missing.append(root / relative)
+
+    if missing:
+        rendered = "; ".join(str(path.relative_to(root)) for path in missing[:20])
+        raise RuntimeError(f"Approach 1 output validation failed; missing: {rendered}")
+
+    if set(selected_strata) == set(STRATUM_BY_KEY):
+        complete_run_files = [
+            root
+            / "results"
+            / "01_set_count"
+            / "eight_stratum_distinctive_trav_summary.csv",
+            root
+            / "figures"
+            / "01_set_count"
+            / "cross_stratum"
+            / "distinctive_trav_across_eight_strata.png",
+        ]
+        missing_complete = [path for path in complete_run_files if not path.is_file()]
+        if missing_complete:
+            raise RuntimeError(
+                "The complete eight-stratum summary is missing: "
+                + "; ".join(str(path.relative_to(root)) for path in missing_complete)
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run one analytical approach, selected approaches, "
-            "or the complete publication pipeline."
+            "Run the restored notebook-first analysis, selected later approaches, "
+            "or the complete publication workflow."
         )
     )
     parser.add_argument(
         "--approach",
         default="all",
-        help=("1, 2, 3, 4/compare, comma-separated values, or all (default)."),
+        help="1, 2, 3, 4/compare, comma-separated values, or all (default).",
     )
     parser.add_argument(
         "--strata",
         default="all",
         help="all or comma-separated canonical biological strata.",
     )
-    parser.add_argument(
-        "--data-dir",
-        type=Path,
-        help="Derived-data directory used by Approaches 2 and 3.",
-    )
-    parser.add_argument(
-        "--metadata-csv",
-        type=Path,
-        help=("Approach 1 metadata CSV. The documented HPC path is used when omitted."),
-    )
-    parser.add_argument(
-        "--clonoset-index",
-        type=Path,
-        help=(
-            "Approach 1 clonoset-index CSV. The documented HPC path is used when omitted."
-        ),
-    )
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--metadata-csv", type=Path)
+    parser.add_argument("--clonoset-index", type=Path)
+    parser.add_argument("--working-dir", type=Path)
     parser.add_argument(
         "--resume",
         action="store_true",
-        help=(
-            "Restore checkpoint outputs, re-run bootstrap cells, "
-            "and skip completed analytical cells."
-        ),
+        help="Replay the checkpointed notebook state and continue with durable logs.",
     )
     arguments = parser.parse_args()
 
     root = repo_root()
-    selected = resolve_sequence(arguments.approach)
-    pipeline_logger = Logger(root / "results" / "logs" / "pipeline.log")
+    selected_approaches = resolve_sequence(arguments.approach)
+    selected_strata = resolve_strata(arguments.strata)
+    base_environment = _base_environment(arguments)
+    pipeline_logger = Logger(root / "logs" / "pipeline.log")
     pipeline_logger.write(
-        f"PIPELINE START | approaches={','.join(selected)} | strata={arguments.strata}"
+        "PIPELINE START | approaches="
+        + ",".join(selected_approaches)
+        + " | strata="
+        + ",".join(selected_strata)
     )
     try:
-        for position, key in enumerate(selected, start=1):
+        for approach_position, key in enumerate(selected_approaches, start=1):
             name, relative_path = APPROACHES[key]
-            remaining = len(selected) - position
+            notebook_path = root / relative_path
+            if key == "1":
+                for stratum_position, stratum in enumerate(selected_strata, start=1):
+                    stem = STRATUM_BY_KEY[stratum]
+                    final_complete_run = (
+                        set(selected_strata) == set(STRATUM_BY_KEY)
+                        and stratum_position == len(selected_strata)
+                    )
+                    pipeline_logger.write(
+                        f"STRATUM {stratum_position}/{len(selected_strata)} START | "
+                        f"{stratum} | output=audit_runs/{stem}.executed.ipynb"
+                    )
+                    environment = {
+                        **base_environment,
+                        "MICE_TCR_STRATUM": stratum,
+                        "MICE_TCR_FINALIZE_SUMMARY": (
+                            "1" if final_complete_run else "0"
+                        ),
+                    }
+                    execute_notebook(
+                        notebook_path,
+                        stem,
+                        environment=environment,
+                        resume=arguments.resume,
+                    )
+                    pipeline_logger.write(
+                        f"STRATUM {stratum_position}/{len(selected_strata)} DONE | {stratum}"
+                    )
+                verify_first_approach_outputs(selected_strata)
+                pipeline_logger.write(
+                    f"APPROACH {approach_position}/{len(selected_approaches)} DONE | "
+                    f"{name} | verified_strata={len(selected_strata)}"
+                )
+                continue
+
+            remaining = len(selected_approaches) - approach_position
             pipeline_logger.write(
-                f"APPROACH {position}/{len(selected)} START | "
+                f"APPROACH {approach_position}/{len(selected_approaches)} START | "
                 f"{name} | {remaining} approach(es) remain after this"
             )
-            try:
-                output = execute_notebook(
-                    root / relative_path,
-                    name,
-                    strata=arguments.strata,
-                    data_dir=arguments.data_dir,
-                    metadata_csv=arguments.metadata_csv,
-                    clonoset_index=arguments.clonoset_index,
-                    resume=arguments.resume,
-                )
-            except BaseException:
-                pipeline_logger.write(
-                    f"APPROACH {position}/{len(selected)} FAILED | {name}"
-                )
-                raise
+            environment = {
+                **base_environment,
+                "MICE_TCR_STRATA": ",".join(selected_strata),
+            }
+            output = execute_notebook(
+                notebook_path,
+                name,
+                environment=environment,
+                resume=arguments.resume,
+            )
             pipeline_logger.write(
-                f"APPROACH {position}/{len(selected)} DONE | "
+                f"APPROACH {approach_position}/{len(selected_approaches)} DONE | "
                 f"{name} | output={output.relative_to(root)}"
             )
     finally:

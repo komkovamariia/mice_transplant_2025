@@ -7,6 +7,10 @@ results/*
 figures/*
 !figures/README.md
 
+# Executed notebooks and durable runtime logs are generated on the analysis host.
+audit_runs/
+logs/
+
 # Python/Jupyter artifacts.
 __pycache__/
 *.py[cod]

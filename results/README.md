@@ -1,8 +1,8 @@
 # Numerical results
 
-Generated tables, conclusions, executed notebooks, logs, and caches are written here.
-Figures are deliberately excluded and are stored only under the repository-level
-`figures/` directory.
+Generated tables, conclusions, and caches are written here. Executed notebooks are
+stored under `audit_runs/`, logs are stored under `logs/`, and figures are stored only
+under the repository-level `figures/` directory.
 
 ```text
 results/
@@ -11,7 +11,5 @@ results/
 ├── 03_clone_alloreactivity/
 ├── 04_cross_approach/
 ├── cache/
-├── executed_notebooks/
-├── logs/
 └── figure_inventory.csv
 ```

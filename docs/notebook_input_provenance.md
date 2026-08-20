@@ -7,11 +7,10 @@ This document records the data interface used by each notebook in the original H
 The input audit used the following sources:
 
 - `presenting_repseq.ipynb`, which prepares MiXCR outputs and the clonoset index;
-- `venn_original.ipynb` immediately before removal of DESeq2 from the notebook;
-- the DESeq2-free `venn_original.ipynb` produced in commit `6678766a0e8913ec2feacb3efb2daebd6a27eda4`;
+- the edgeR-and-Fisher `venn_original.ipynb` produced in commit `6678766a0e8913ec2feacb3efb2daebd6a27eda4`;
 - `mirpy_analysis.ipynb` and `results_summary.ipynb` from the original three-method study;
 - `study2_alloreactivity/alloreactivity_study.ipynb` from the original clone-level study;
-- the four active source notebooks under `notebooks/`.
+- the restored root notebook and the three later source notebooks under `notebooks/`.
 
 ## Input map
 
@@ -22,7 +21,7 @@ The input audit used the following sources:
 | Historical `mirpy_analysis.ipynb` | Derived flattened clonotype tables including `clean_clonotypes_aaV.parquet` and aaVJ count tables | Parquet is a derived analysis format used by this notebook. It is not an input to the first pass. |
 | Historical `results_summary.ipynb` | CSV result tables produced by the upstream analyses | No primary repertoire input is read. |
 | Historical Study 2 notebook | `study2_data/clonosets_study2.csv`, repseq-compatible clonotype tables, and previously generated CSV/Parquet result layers | Several Parquet files are derived results consumed by later sections. |
-| Active Approach 1 | `metadata_mice_transplant.csv`, `clonosets_mice_transplant_2025_df.csv`, and its referenced MiXCR exports through `src.first_pass_input.load_first_pass_repertoire()` | No Parquet input is used. |
+| Active Approach 1 | `metadata_mice_transplant.csv`, `clonosets_mice_transplant_2025_df.csv`, and its referenced MiXCR exports, read directly in `venn_original.ipynb` | No Parquet input is used. |
 | Active Approaches 2 and 3 | `clean_clonotypes_aaV.parquet` through `src.strata.load_repertoire()` | Parquet remains the later derived interface for sequence-space and clone-evidence analyses. |
 | Active Approach 4 | Standardized tables produced by active Approaches 1 to 3 | No repertoire file is read directly. |
 
@@ -42,7 +41,12 @@ The raw FASTQ directory is used by `presenting_repseq.ipynb` when MiXCR outputs 
 
 ## Active first-pass implementation
 
-`python scripts/run_analysis.py --approach 1` now follows the verified CSV and MiXCR route directly. It reproduces the original chain-plus-sample-number metadata merge, applies the historical TRA sample exclusions, invokes `repseq.intersections.count_table()` in aaV mode with zero mismatches, and converts the in-memory count matrix to the shared sample-resolved interface. No minimum abundance threshold is applied. Empty, non-functional, and non-TRAV records are removed before statistical modeling.
+`python scripts/run_analysis.py --approach 1` executes the restored notebook once for
+each biological stratum. The notebook reproduces the original
+chain-plus-sample-number metadata merge, applies the historical TRA exclusions, and
+invokes `repseq.intersections.count_table()` in aaV mode with zero mismatches. No
+minimum abundance threshold is applied. The runner produces eight separately executed
+notebooks under `audit_runs/`.
 
 ## Remaining derived-data boundary
 

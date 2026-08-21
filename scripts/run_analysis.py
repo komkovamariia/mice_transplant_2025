@@ -283,9 +283,10 @@ def _base_environment(arguments) -> dict[str, str]:
 
 
 def prepare_first_approach_figure_directory(selected_strata: list[str]) -> None:
-    """Remove stale generated figures before a fresh Approach 1 execution."""
+    """Remove stale generated figures and tables before Approach 1 execution."""
     root = repo_root()
     figure_root = root / "figures" / "01_set_count"
+    result_root = root / "results" / "01_set_count"
     archive_path = root / "figures" / "01_set_count.zip"
     if archive_path.is_file():
         archive_path.unlink()
@@ -293,12 +294,15 @@ def prepare_first_approach_figure_directory(selected_strata: list[str]) -> None:
     if set(selected_strata) == set(STRATUM_BY_KEY):
         if figure_root.is_dir():
             shutil.rmtree(figure_root)
+        if result_root.is_dir():
+            shutil.rmtree(result_root)
         return
 
     for stratum in selected_strata:
-        stratum_directory = figure_root / stratum
-        if stratum_directory.is_dir():
-            shutil.rmtree(stratum_directory)
+        for output_root in (figure_root, result_root):
+            stratum_directory = output_root / stratum
+            if stratum_directory.is_dir():
+                shutil.rmtree(stratum_directory)
 
 
 def archive_first_approach_figures() -> Path:

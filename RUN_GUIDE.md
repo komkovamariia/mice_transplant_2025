@@ -181,6 +181,9 @@ per stratum. Auxiliary pairwise and mouse-level Venn figures are omitted. The fi
 output audit fails explicitly if edgeR does not complete or any additional heatmap is
 present.
 
+The runner clears the generated figure and result directories for each requested
+stratum before execution, then creates `figures/01_set_count.zip` after validation.
+
 ## 10. Direct `nbconvert` execution
 
 The runner is recommended because it provides cell-by-cell logs, consistent names, and

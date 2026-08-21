@@ -62,12 +62,20 @@ def test_prepare_and_archive_first_approach_figures(tmp_path, monkeypatch):
     retained.mkdir(parents=True)
     (selected / "stale.png").write_bytes(b"stale")
     (retained / "retained.png").write_bytes(b"retained")
+    stale_results = tmp_path / "results" / "01_set_count" / "cd4_thymus"
+    retained_results = tmp_path / "results" / "01_set_count" / "cd8_thymus"
+    stale_results.mkdir(parents=True)
+    retained_results.mkdir(parents=True)
+    (stale_results / "g2_stale.csv").write_text("stale\n", encoding="utf-8")
+    (retained_results / "retained.csv").write_text("retained\n", encoding="utf-8")
     (tmp_path / "figures" / "01_set_count.zip").write_bytes(b"old")
 
     prepare_first_approach_figure_directory(["cd4_thymus"])
 
     assert not selected.exists()
     assert retained.is_dir()
+    assert not stale_results.exists()
+    assert retained_results.is_dir()
     assert not (tmp_path / "figures" / "01_set_count.zip").exists()
 
     archive_path = archive_first_approach_figures()

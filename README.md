@@ -154,6 +154,10 @@ Each stratum produces:
 At the end of Approach 1, the runner creates `figures/01_set_count.zip` containing the
 complete `figures/01_set_count/` directory.
 
+Before a fresh run, generated figure and result directories for the requested strata
+are cleared. This prevents removed g2 and auxiliary outputs from surviving as stale
+files from an earlier execution.
+
 The output audit also requires a successfully fitted edgeR quasi-likelihood model for
 every requested stratum. A skipped or incomplete model terminates the run with an
 explicit error in the cell log.

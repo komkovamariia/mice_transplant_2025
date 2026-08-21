@@ -1,9 +1,13 @@
+import zipfile
+
 import nbformat
 import pytest
 
 from scripts.run_analysis import (
     STRATUM_RUNS,
     _cell_description,
+    archive_first_approach_figures,
+    prepare_first_approach_figure_directory,
     resolve_sequence,
     resolve_strata,
 )
@@ -47,3 +51,26 @@ def test_cell_description_prefers_explicit_metadata():
 def test_cell_description_uses_first_executable_line():
     cell = nbformat.v4.new_code_cell("\n\nresult = run_stratum()\n")
     assert _cell_description(cell) == "result = run_stratum()"
+
+
+def test_prepare_and_archive_first_approach_figures(tmp_path, monkeypatch):
+    monkeypatch.setattr("scripts.run_analysis.repo_root", lambda: tmp_path)
+    figure_root = tmp_path / "figures" / "01_set_count"
+    selected = figure_root / "cd4_thymus"
+    retained = figure_root / "cd8_thymus"
+    selected.mkdir(parents=True)
+    retained.mkdir(parents=True)
+    (selected / "stale.png").write_bytes(b"stale")
+    (retained / "retained.png").write_bytes(b"retained")
+    (tmp_path / "figures" / "01_set_count.zip").write_bytes(b"old")
+
+    prepare_first_approach_figure_directory(["cd4_thymus"])
+
+    assert not selected.exists()
+    assert retained.is_dir()
+    assert not (tmp_path / "figures" / "01_set_count.zip").exists()
+
+    archive_path = archive_first_approach_figures()
+    assert archive_path.is_file()
+    with zipfile.ZipFile(archive_path) as archive:
+        assert archive.namelist() == ["01_set_count/cd8_thymus/retained.png"]

@@ -13,8 +13,8 @@ last verified notebook-first implementation at commit
 | Historical key | Construct `<metadata chain>-<sample_no>` before chain normalization, preserving keys such as `alpha-100` and `beta-100`. |
 | Exclusions | Retain the three prespecified TRA sample exclusions from the historical notebook. |
 | Clonotype | Use exact `(CDR3aa, V)` features through `overlap_type="aaV"` and `mismatches=0`. |
-| TRA/TRB sets | Retain g1 to g6 count tables, five-circle set diagrams, exact subtraction, V-segment retention tables, bubble plots, heatmaps, and intragroup Venn diagrams. |
-| Repertoire similarity | Retain mouse-level TRA/TRB Jensen-Shannon, rank-correlation, and UMI-correlation analyses. |
+| TRA/TRB sets | Retain g1 to g6 count tables, the g1-centered five-circle set diagrams, exact g1 subtraction, V-segment retention tables, and TRA/TRB bubble plots. g2-centered duplicates are excluded from this study. |
+| Repertoire similarity | Retain non-g2 mouse-level TRA/TRB Jensen-Shannon, rank-correlation, and UMI-correlation tables. Auxiliary pairwise figures are excluded from the article output. |
 | Fisher | Compare pooled g1 and g5+g6 feature counts with the historical pseudocount-adjusted log2 ratio and Benjamini-Hochberg correction. |
 | edgeR | Retain TMM normalization, `filterByExpr`, quasi-likelihood fitting, and the g1 coefficient relative to pooled g5+g6 annotation. |
 | Thresholds | Introduce no minimum UMI or read-count threshold. |
@@ -45,14 +45,17 @@ inline. The restored notebook registers a Matplotlib figure hook before analytic
 cells execute. Explicit and displayed figures are saved as PNG and PDF under
 `figures/01_set_count/<stratum>/`. A per-stratum manifest is checked by the runner.
 
-For each chain, the bubble plot labels the ten highest-impact V segments and the
-associated heatmap is restricted to that same ordered set. Heatmap annotations switch
-between light and dark text using rendered cell luminance. Pairwise TRA/TRB heatmaps
-use a dedicated right-hand color-scale axis.
+For each chain, the bubble plot labels the ten V segments with the highest preservation
+score from the article, `S(v) = f_full(v) × r(v)`. The associated heatmap is restricted
+to that same ordered set after the graphical thresholds of 0.6% initial share and 66%
+retention, and to the four regions that contain g1. Entropy is normalized
+by `log2(4)`. Heatmap annotations switch between light and dark text using rendered cell
+luminance. No pairwise similarity, UMI-correlation, cross-stratum, or mouse-level Venn
+heatmaps are generated.
 
 After all eight executions, the final run consolidates the stratum-level TRAV tables
-and builds the cross-stratum evidence heatmap. Descriptive exact-set evidence is kept
-separate from FDR-supported inference.
+and creates one `figures/01_set_count.zip` archive. Descriptive exact-set evidence is
+kept separate from FDR-supported inference.
 
 ## Verification boundary
 

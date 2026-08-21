@@ -230,8 +230,31 @@ def _validate_primary_notebook() -> None:
             "an excluded differential-expression implementation remains "
             "in venn_original.ipynb"
         )
-    if joined.count("plt.show(") < 20:
-        fail("venn_original.ipynb no longer contains the full historical figure set")
+    if joined.count("plt.show(") < 10:
+        fail("venn_original.ipynb is missing the retained article figure set")
+    required_figure_scope = (
+        'region_order = ["100", "110", "101", "111"]',
+        "np.log2(len(target_region_order))",
+        "retention_score",
+        "TRA_g1_top10_bubble_genes_heatmap.png",
+        "TRB_g1_top10_bubble_genes_heatmap.png",
+    )
+    missing_scope = [token for token in required_figure_scope if token not in joined]
+    if missing_scope:
+        fail(f"venn_original.ipynb lacks article figure contract: {missing_scope}")
+    forbidden_figure_scope = (
+        "impact_score",
+        "specific_score",
+        "double_triple_g2",
+        "_heatmaps.png",
+        "_scatter.png",
+        "_boxplot.png",
+        "mouse_venn_panel",
+        "distinctive_trav_across_eight_strata",
+    )
+    remaining_scope = [token for token in forbidden_figure_scope if token in joined]
+    if remaining_scope:
+        fail(f"venn_original.ipynb retains excluded figure scope: {remaining_scope}")
     if (
         "plt.savefig = _article_savefig" not in joined
         or "plt.show = _article_show" not in joined
@@ -301,6 +324,8 @@ def _validate_runner_and_documentation() -> None:
         "[CELL ",
         "code cell(s) remain",
         "verify_first_approach_outputs",
+        "archive_first_approach_figures",
+        "01_set_count.zip",
         "figure_manifest.csv",
         *EXPECTED_STRATA,
         *EXPECTED_AUDIT_STEMS,

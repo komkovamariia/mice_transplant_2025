@@ -166,16 +166,20 @@ preserves notebook semantics.
 | Executed notebooks | `audit_runs/` |
 | Cell-level logs | `logs/` |
 | Per-stratum figures | `figures/01_set_count/<stratum>/` |
-| Cross-stratum figure | `figures/01_set_count/cross_stratum/` |
+| Complete figure archive | `figures/01_set_count.zip` |
 | Per-stratum tables and conclusion | `results/01_set_count/<stratum>/` |
 | Figure manifest | `results/01_set_count/<stratum>/figure_manifest.csv` |
 | Consolidated TRAV table | `results/01_set_count/eight_stratum_distinctive_trav_summary.csv` |
 
 Every figure displayed by Matplotlib is saved in PNG and PDF. Explicit legacy paths are
 redirected to the same central figure root. Non-figure tables remain under `results/`.
-The TRA and TRB V-segment heatmaps contain only the ten segments labelled in the
-corresponding bubble plot. Pairwise heatmap scales are positioned to the right of both
-chain panels. The final output audit fails explicitly if edgeR does not complete.
+The TRA and TRB V-segment heatmaps contain only the ten segments with the highest
+article score `S(v) = f_full(v) × r(v)` and only the four g1-containing regions. The
+ranking candidates satisfy at least 0.6% initial share and at least 66% retention. The
+normalized entropy therefore uses `log2(4)`. These are the only two heatmaps produced
+per stratum. Auxiliary pairwise and mouse-level Venn figures are omitted. The final
+output audit fails explicitly if edgeR does not complete or any additional heatmap is
+present.
 
 ## 10. Direct `nbconvert` execution
 

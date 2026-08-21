@@ -7,8 +7,10 @@ import argparse
 import contextlib
 import json
 import os
+import shutil
 import threading
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -280,6 +282,50 @@ def _base_environment(arguments) -> dict[str, str]:
     return environment
 
 
+def prepare_first_approach_figure_directory(selected_strata: list[str]) -> None:
+    """Remove stale generated figures before a fresh Approach 1 execution."""
+    root = repo_root()
+    figure_root = root / "figures" / "01_set_count"
+    archive_path = root / "figures" / "01_set_count.zip"
+    if archive_path.is_file():
+        archive_path.unlink()
+
+    if set(selected_strata) == set(STRATUM_BY_KEY):
+        if figure_root.is_dir():
+            shutil.rmtree(figure_root)
+        return
+
+    for stratum in selected_strata:
+        stratum_directory = figure_root / stratum
+        if stratum_directory.is_dir():
+            shutil.rmtree(stratum_directory)
+
+
+def archive_first_approach_figures() -> Path:
+    """Create one ZIP containing the complete figures/01_set_count directory."""
+    root = repo_root()
+    figure_root = root / "figures" / "01_set_count"
+    if not figure_root.is_dir():
+        raise RuntimeError(
+            "Cannot archive Approach 1 figures because figures/01_set_count is missing."
+        )
+
+    archive_path = root / "figures" / "01_set_count.zip"
+    temporary_path = archive_path.with_suffix(".zip.tmp")
+    if temporary_path.exists():
+        temporary_path.unlink()
+    with zipfile.ZipFile(
+        temporary_path,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        for path in sorted(figure_root.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(figure_root.parent))
+    temporary_path.replace(archive_path)
+    return archive_path
+
+
 def verify_first_approach_outputs(selected_strata: list[str]) -> None:
     """Fail immediately when an executed notebook, table, or displayed figure is absent."""
     root = repo_root()
@@ -311,6 +357,19 @@ def verify_first_approach_outputs(selected_strata: list[str]) -> None:
         manifest = pd.read_csv(manifest_path)
         if manifest.empty:
             raise RuntimeError(f"Figure manifest is empty for {stratum}.")
+        heatmap_names = {
+            Path(path).name
+            for path in manifest["png"].dropna().astype(str)
+            if "heatmap" in Path(path).name.lower()
+        }
+        expected_heatmap_names = {
+            "TRA_g1_top10_bubble_genes_heatmap.png",
+            "TRB_g1_top10_bubble_genes_heatmap.png",
+        }
+        if heatmap_names != expected_heatmap_names:
+            raise RuntimeError(
+                f"Unexpected heatmap output for {stratum}: {sorted(heatmap_names)}"
+            )
         for column in ("png", "pdf"):
             for relative in manifest[column].dropna().astype(str):
                 if not (root / relative).is_file():
@@ -326,11 +385,6 @@ def verify_first_approach_outputs(selected_strata: list[str]) -> None:
             / "results"
             / "01_set_count"
             / "eight_stratum_distinctive_trav_summary.csv",
-            root
-            / "figures"
-            / "01_set_count"
-            / "cross_stratum"
-            / "distinctive_trav_across_eight_strata.png",
         ]
         missing_complete = [path for path in complete_run_files if not path.is_file()]
         if missing_complete:
@@ -384,6 +438,7 @@ def main() -> int:
             name, relative_path = APPROACHES[key]
             notebook_path = root / relative_path
             if key == "1":
+                prepare_first_approach_figure_directory(selected_strata)
                 for stratum_position, stratum in enumerate(selected_strata, start=1):
                     stem = STRATUM_BY_KEY[stratum]
                     final_complete_run = (
@@ -411,6 +466,10 @@ def main() -> int:
                         f"STRATUM {stratum_position}/{len(selected_strata)} DONE | {stratum}"
                     )
                 verify_first_approach_outputs(selected_strata)
+                archive_path = archive_first_approach_figures()
+                pipeline_logger.write(
+                    f"FIGURE ARCHIVE CREATED | {archive_path.relative_to(root)}"
+                )
                 pipeline_logger.write(
                     f"APPROACH {approach_position}/{len(selected_approaches)} DONE | "
                     f"{name} | verified_strata={len(selected_strata)}"

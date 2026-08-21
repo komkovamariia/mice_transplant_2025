@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import threading
 import time
@@ -294,6 +295,15 @@ def verify_first_approach_outputs(selected_strata: list[str]) -> None:
             root / "results" / "01_set_count" / stratum / "figure_manifest.csv",
         ]
         missing.extend(path for path in required if not path.is_file())
+
+        summary_path = required[2]
+        if summary_path.is_file():
+            run_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            edger_status = str(run_summary.get("edger_status", "missing"))
+            if edger_status != "edgeR quasi-likelihood model fitted successfully.":
+                raise RuntimeError(
+                    f"edgeR did not complete for {stratum}: {edger_status}"
+                )
 
         manifest_path = required[-1]
         if not manifest_path.is_file():

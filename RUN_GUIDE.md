@@ -173,6 +173,9 @@ preserves notebook semantics.
 
 Every figure displayed by Matplotlib is saved in PNG and PDF. Explicit legacy paths are
 redirected to the same central figure root. Non-figure tables remain under `results/`.
+The TRA and TRB V-segment heatmaps contain only the ten segments labelled in the
+corresponding bubble plot. Pairwise heatmap scales are positioned to the right of both
+chain panels. The final output audit fails explicitly if edgeR does not complete.
 
 ## 10. Direct `nbconvert` execution
 

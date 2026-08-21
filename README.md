@@ -83,6 +83,12 @@ mice_transplant_2025/
 and displayed Matplotlib figure as PNG and PDF. Each stratum writes a manifest, and the
 runner fails if a listed file is missing.
 
+TRA and TRB V-segment bubble plots label the ten highest-impact segments. Their
+companion heatmaps use exactly those ten segments, contain no cell grid, and apply
+light or dark numeric annotations according to cell luminance. Pairwise TRA/TRB
+heatmaps place their shared scale to the right of both panels. Every saved figure title
+states the receptor chain, treatment-group context, cell subset, and organ.
+
 ## Quick start on HPC
 
 Update the branch and environment:
@@ -141,6 +147,10 @@ Each stratum produces:
   `results/01_set_count/<stratum>/`;
 - a complete TRAV ranking and a concise stratum-specific conclusion;
 - a figure manifest verified by the runner.
+
+The output audit also requires a successfully fitted edgeR quasi-likelihood model for
+every requested stratum. A skipped or incomplete model terminates the run with an
+explicit error in the cell log.
 
 After all eight runs, the final notebook creates
 `results/01_set_count/eight_stratum_distinctive_trav_summary.csv` and the cross-stratum

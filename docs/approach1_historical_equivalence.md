@@ -22,6 +22,10 @@ last verified notebook-first implementation at commit
 The active differential section contains edgeR and the Fisher sensitivity analysis
 only. No additional differential-expression model is fitted.
 
+The runner treats edgeR fitting as a required output contract. It reports a failed
+stratum when the quasi-likelihood model does not complete, which prevents an earlier
+plotting or dependency error from being interpreted as a complete differential result.
+
 ## Eight-stratum extension
 
 The historical notebook analyzed all available compartments together. The active
@@ -40,6 +44,11 @@ The historical notebook saved some figures explicitly and displayed others only
 inline. The restored notebook registers a Matplotlib figure hook before analytical
 cells execute. Explicit and displayed figures are saved as PNG and PDF under
 `figures/01_set_count/<stratum>/`. A per-stratum manifest is checked by the runner.
+
+For each chain, the bubble plot labels the ten highest-impact V segments and the
+associated heatmap is restricted to that same ordered set. Heatmap annotations switch
+between light and dark text using rendered cell luminance. Pairwise TRA/TRB heatmaps
+use a dedicated right-hand color-scale axis.
 
 After all eight executions, the final run consolidates the stratum-level TRAV tables
 and builds the cross-stratum evidence heatmap. Descriptive exact-set evidence is kept

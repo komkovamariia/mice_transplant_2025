@@ -26,6 +26,14 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert joined.count("plt.show(") >= 20
     assert "plt.savefig = _article_savefig" in joined
     assert "plt.show = _article_show" in joined
+    assert "sns.set_theme(style=\"white\"" in joined
+    assert "collect_boxplot_table(results_v_js)" not in joined
+    assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
+    assert "top_n_labels=10" in joined
+    assert "_adaptive_annotation_color" in joined
+    assert "add_gridspec(1, 3, width_ratios=[1, 1, 0.045])" in joined
+    assert "def plot_v_region_heatmap(" not in joined
+    assert joined.count("top10_bubble_genes_heatmap.png") == 2
 
 
 def test_output_verification_rejects_missing_stratum_artifacts(tmp_path, monkeypatch):
@@ -46,7 +54,13 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
 
     (audit_dir / f"{stem}.executed.ipynb").write_text("{}", encoding="utf-8")
     (log_dir / f"{stem}.log").write_text("complete\n", encoding="utf-8")
-    (result_dir / "run_summary.json").write_text("{}\n", encoding="utf-8")
+    (result_dir / "run_summary.json").write_text(
+        json.dumps(
+            {"edger_status": "edgeR quasi-likelihood model fitted successfully."}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (result_dir / "trav_ranking.csv").write_text("v_gene\nTRAV1\n", encoding="utf-8")
     (result_dir / "distinctive_trav.csv").write_text(
         "v_gene\nTRAV1\n", encoding="utf-8"
@@ -65,3 +79,22 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
     ).to_csv(result_dir / "figure_manifest.csv", index=False)
 
     run_analysis.verify_first_approach_outputs(["cd4_thymus"])
+
+
+def test_output_verification_rejects_an_unfitted_edger_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_analysis, "repo_root", lambda: tmp_path)
+    stem = run_analysis.STRATUM_BY_KEY["cd4_thymus"]
+    result_dir = tmp_path / "results" / "01_set_count" / "cd4_thymus"
+    (tmp_path / "audit_runs").mkdir(parents=True)
+    (tmp_path / "logs").mkdir(parents=True)
+    result_dir.mkdir(parents=True)
+    (tmp_path / "audit_runs" / f"{stem}.executed.ipynb").write_text(
+        "{}", encoding="utf-8"
+    )
+    (tmp_path / "logs" / f"{stem}.log").write_text("complete\n", encoding="utf-8")
+    (result_dir / "run_summary.json").write_text(
+        json.dumps({"edger_status": "not fitted"}) + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match="edgeR did not complete"):
+        run_analysis.verify_first_approach_outputs(["cd4_thymus"])

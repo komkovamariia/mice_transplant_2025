@@ -324,6 +324,7 @@ def _validate_runner_and_documentation() -> None:
         "[CELL ",
         "code cell(s) remain",
         "verify_first_approach_outputs",
+        "prepare_first_approach_output_directories",
         "archive_first_approach_figures",
         "01_set_count.zip",
         "figure_manifest.csv",

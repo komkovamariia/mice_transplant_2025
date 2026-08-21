@@ -282,7 +282,7 @@ def _base_environment(arguments) -> dict[str, str]:
     return environment
 
 
-def prepare_first_approach_figure_directory(selected_strata: list[str]) -> None:
+def prepare_first_approach_output_directories(selected_strata: list[str]) -> None:
     """Remove stale generated figures and tables before Approach 1 execution."""
     root = repo_root()
     figure_root = root / "figures" / "01_set_count"
@@ -442,7 +442,7 @@ def main() -> int:
             name, relative_path = APPROACHES[key]
             notebook_path = root / relative_path
             if key == "1":
-                prepare_first_approach_figure_directory(selected_strata)
+                prepare_first_approach_output_directories(selected_strata)
                 for stratum_position, stratum in enumerate(selected_strata, start=1):
                     stem = STRATUM_BY_KEY[stratum]
                     final_complete_run = (

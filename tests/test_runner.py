@@ -7,7 +7,7 @@ from scripts.run_analysis import (
     STRATUM_RUNS,
     _cell_description,
     archive_first_approach_figures,
-    prepare_first_approach_figure_directory,
+    prepare_first_approach_output_directories,
     resolve_sequence,
     resolve_strata,
 )
@@ -53,7 +53,7 @@ def test_cell_description_uses_first_executable_line():
     assert _cell_description(cell) == "result = run_stratum()"
 
 
-def test_prepare_and_archive_first_approach_figures(tmp_path, monkeypatch):
+def test_prepare_and_archive_first_approach_outputs(tmp_path, monkeypatch):
     monkeypatch.setattr("scripts.run_analysis.repo_root", lambda: tmp_path)
     figure_root = tmp_path / "figures" / "01_set_count"
     selected = figure_root / "cd4_thymus"
@@ -70,7 +70,7 @@ def test_prepare_and_archive_first_approach_figures(tmp_path, monkeypatch):
     (retained_results / "retained.csv").write_text("retained\n", encoding="utf-8")
     (tmp_path / "figures" / "01_set_count.zip").write_bytes(b"old")
 
-    prepare_first_approach_figure_directory(["cd4_thymus"])
+    prepare_first_approach_output_directories(["cd4_thymus"])
 
     assert not selected.exists()
     assert retained.is_dir()

@@ -56,7 +56,7 @@ mouse for inference, so tissues from the same mouse remain one biological replic
 
 | Run order | Key | Cell subsets and organs | Executed notebook |
 |---|---|---|---|
-| First | `all_combined` | CD4 + CD8, thymus + spleen | `audit_runs/00_all_combined.executed.ipynb` |
+| 1 | `all_combined` | CD4 + CD8, thymus + spleen | `audit_runs/00_all_combined.executed.ipynb` |
 | 2 | `cd4_thymus` | CD4, thymus | `audit_runs/01_cd4_thymus.executed.ipynb` |
 | 3 | `cd8_thymus` | CD8, thymus | `audit_runs/02_cd8_thymus.executed.ipynb` |
 | 4 | `cd4_spleen` | CD4, spleen | `audit_runs/03_cd4_spleen.executed.ipynb` |

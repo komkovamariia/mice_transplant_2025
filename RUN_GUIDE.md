@@ -1,5 +1,10 @@
 # Running the analysis
 
+For the combined baseline and sixteen spike-in doses from 0.00001% to 1%, use the
+[Aldan-3 parallel run guide](docs/aldan3_parallel.md). It supports a 24-CPU baseline,
+then three independent 8-CPU dose notebooks, with explicit memory reservations,
+Slurm dependencies and one final summary/ZIP writer. Preparation does not submit jobs.
+
 ## Update an existing HPC checkout
 
 ```bash

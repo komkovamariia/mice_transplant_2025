@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import shutil
@@ -406,8 +407,20 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
             )
 
 
+def analysis_fingerprint(root: Path) -> str:
+    """Reject mixed source versions across independently scheduled cases."""
+    paths = [root / "venn_original.ipynb", root / "environment.yml"]
+    paths += sorted((root / "src").glob("*.py"))
+    paths += sorted((root / "scripts").glob("*.py"))
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(str(path.relative_to(root)).encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def run_spike_experiment(arguments, base_environment, logger) -> None:
-    """Run a fresh baseline and independent doses through the primary notebook."""
+    """Run sequentially or execute one isolated stage of a Slurm dependency graph."""
     root = repo_root()
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
@@ -422,6 +435,9 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         raise ValueError("Spike-in uses --strata all_combined.")
     if arguments.resume:
         raise ValueError("Spike-in experiments start from a fresh baseline; omit --resume.")
+    stage = getattr(arguments, "spike_stage", "all")
+    if stage != "all" and not arguments.spike_run_id:
+        raise ValueError("Staged execution requires --spike-run-id.")
     import math
     fractions = sorted(set(float(value) for value in arguments.spike_fractions.split(",")))
     if not fractions or any(not math.isfinite(f) or not 0 < f < 1 for f in fractions):
@@ -432,19 +448,50 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
     result_root = root / "results" / "01_spike_in" / run_id
     figure_root = root / "figures" / "01_spike_in" / run_id
     archive = figure_root.parent / f"{run_id}.zip"
-    if any(path.exists() for path in (result_root, figure_root,
-            archive, root / "audit_runs" / "spike_in" / run_id, root / "logs" / "spike_in" / run_id)):
-        raise FileExistsError(f"Spike-in run {run_id} already exists; choose a fresh --spike-run-id.")
-    result_root.mkdir(parents=True)
+    input_environment = {key: os.environ.get(key, "") for key in (
+        "MICE_TCR_DATA_DIR", "MICE_TCR_METADATA_CSV", "MICE_TCR_CLONOSET_INDEX",
+        "MICE_TCR_WORKING_DIR",
+    )}
+    input_environment.update(base_environment)
     configuration = {
         "run_id": run_id, "stratum": "all_combined", "fractions": fractions,
         "seed": arguments.spike_seed, "n_clones": arguments.spike_clones,
         "requested_v_gene": arguments.spike_v_gene,
         "max_g1_fraction": arguments.spike_max_g1_fraction,
+        "source_sha256": analysis_fingerprint(root), "input_environment": input_environment,
     }
-    (result_root / "experiment.json").write_text(json.dumps(configuration, indent=2) + "\n")
+    if stage in ("all", "baseline"):
+        if any(path.exists() for path in (result_root, figure_root,
+                archive, root / "audit_runs" / "spike_in" / run_id, root / "logs" / "spike_in" / run_id)):
+            raise FileExistsError(f"Spike-in run {run_id} already exists; choose a fresh --spike-run-id.")
+        result_root.mkdir(parents=True)
+        (result_root / "experiment.json").write_text(json.dumps(configuration, indent=2) + "\n")
+    elif json.loads((result_root / "experiment.json").read_text()) != configuration:
+        raise ValueError("Source, input paths or spike-in settings differ from the baseline.")
+
+    def claim(case):
+        # Exclusive creation prevents duplicate array submissions from overwriting a case.
+        with (result_root / f"{case}.started.json").open("x") as handle:
+            json.dump({"slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+                       "started_at": datetime.now().isoformat()}, handle)
+
+    def complete(case, **details):
+        if analysis_fingerprint(root) != configuration["source_sha256"]:
+            raise RuntimeError("Analysis source changed during execution; case not accepted.")
+        target = result_root / f"{case}.complete.json"
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps(details, indent=2) + "\n")
+        temporary.replace(target)
+
+    def require_baseline():
+        marker = json.loads((result_root / "baseline.complete.json").read_text())
+        digest = hashlib.sha256((result_root / "selection.json").read_bytes()).hexdigest()
+        if marker["selection_sha256"] != digest:
+            raise ValueError("The frozen spike-in selection changed after baseline completion.")
+        return digest
 
     def execute_case(case, fraction):
+        claim(case)
         logger.write(f"SPIKE-IN | run={run_id} | case={case} | fraction={fraction:g}")
         execute_notebook(root / "venn_original.ipynb", f"spike_in/{run_id}/{case}",
             environment={**base_environment, "MICE_TCR_STRATUM": "all_combined",
@@ -453,25 +500,52 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
                 "MICE_TCR_FINALIZE_SUMMARY": "0"}, resume=False)
         verify_first_approach_outputs(["all_combined"], spike_run=run_id, spike_case=case)
 
-    execute_case("baseline", 0)
-    baseline = result_root / "baseline"
-    selection = select_targets(load_snapshot_tables(baseline, "TRA"),
-        pd.read_csv(baseline / "tra_v_retention.csv"),
-        pd.read_csv(baseline / "trav_ranking.csv"),
-        v_gene=arguments.spike_v_gene, n_clones=arguments.spike_clones,
-        max_g1_fraction=arguments.spike_max_g1_fraction, seed=arguments.spike_seed)
-    (result_root / "selection.json").write_text(json.dumps(selection, indent=2) + "\n")
-    write_baseline_metrics(baseline, selection)
-    cases = ["baseline"]
-    for position, fraction in enumerate(fractions, 1):
+    if stage in ("all", "baseline"):
+        execute_case("baseline", 0)
+        baseline = result_root / "baseline"
+        selection = select_targets(load_snapshot_tables(baseline, "TRA"),
+            pd.read_csv(baseline / "tra_v_retention.csv"),
+            pd.read_csv(baseline / "trav_ranking.csv"),
+            v_gene=arguments.spike_v_gene, n_clones=arguments.spike_clones,
+            max_g1_fraction=arguments.spike_max_g1_fraction, seed=arguments.spike_seed)
+        (result_root / "selection.json").write_text(json.dumps(selection, indent=2) + "\n")
+        write_baseline_metrics(baseline, selection)
+        complete("baseline", selection_sha256=hashlib.sha256(
+            (result_root / "selection.json").read_bytes()).hexdigest())
+        if stage == "baseline":
+            logger.write("SPIKE-IN BASELINE COMPLETE | frozen selection ready for independent doses")
+            return
+
+    selection_digest = require_baseline()
+    if stage == "dose":
+        position = getattr(arguments, "spike_dose_index", None)
+        if position is None or not 1 <= position <= len(fractions):
+            raise ValueError(f"--spike-dose-index must be between 1 and {len(fractions)}.")
         case = f"dose_{position:02d}"
-        execute_case(case, fraction)
-        cases.append(case)
+        execute_case(case, fractions[position - 1])
+        require_baseline()
+        complete(case, selection_sha256=selection_digest)
+        return
+    cases = ["baseline"] + [f"dose_{i:02d}" for i in range(1, len(fractions) + 1)]
+    if stage == "all":
+        for case, fraction in zip(cases[1:], fractions):
+            execute_case(case, fraction)
+            require_baseline()
+            complete(case, selection_sha256=selection_digest)
+    for case in cases:
+        marker = json.loads((result_root / f"{case}.complete.json").read_text())
+        if marker["selection_sha256"] != selection_digest:
+            raise ValueError(f"Selection mismatch in {case}.")
+        verify_first_approach_outputs(["all_combined"], spike_run=run_id, spike_case=case)
+    claim("finalize")
     summarize_experiment(result_root, figure_root, cases)
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+    temporary_archive = archive.with_suffix(".tmp.zip")
+    with zipfile.ZipFile(temporary_archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         for path in sorted(figure_root.rglob("*")):
             if path.is_file():
                 bundle.write(path, path.relative_to(figure_root.parent))
+    temporary_archive.replace(archive)
+    complete("finalize", selection_sha256=selection_digest)
     logger.write(f"SPIKE-IN COMPLETE | results={result_root.relative_to(root)} | archive={archive.relative_to(root)}")
 
 
@@ -504,18 +578,31 @@ def main() -> int:
     parser.add_argument("--spike-max-g1-fraction", type=float, default=1e-5)
     parser.add_argument("--spike-seed", type=int, default=1031)
     parser.add_argument("--spike-run-id", help="Fresh output identifier; otherwise use a timestamp.")
+    parser.add_argument("--spike-stage", choices=("all", "baseline", "dose", "finalize"), default="all",
+                        help="Isolated stage for scheduler jobs; default runs all stages sequentially.")
+    parser.add_argument("--spike-dose-index", type=int, help="One-based dose index in sorted fractions.")
     parser.add_argument(
         "--resume",
         action="store_true",
         help="Replay the checkpointed notebook state and continue with durable logs.",
     )
     arguments = parser.parse_args()
+    if arguments.mode != "spike-in" and arguments.spike_stage != "all":
+        parser.error("--spike-stage requires --mode spike-in")
 
     root = repo_root()
     selected_approaches = resolve_sequence(arguments.approach)
     selected_strata = resolve_strata(arguments.strata)
     base_environment = _base_environment(arguments)
-    pipeline_logger = Logger(root / "logs" / "pipeline.log")
+    if arguments.mode == "spike-in" and arguments.spike_stage != "all":
+        sys.path.insert(0, str(root))
+        from src.spike_in import validate_case_name
+        run_id = validate_case_name(arguments.spike_run_id or "missing-run-id")
+        suffix = f"_{arguments.spike_dose_index}" if arguments.spike_stage == "dose" else ""
+        pipeline_log = root / "logs" / "spike_driver" / run_id / f"{arguments.spike_stage}{suffix}.log"
+    else:
+        pipeline_log = root / "logs" / "pipeline.log"
+    pipeline_logger = Logger(pipeline_log)
     pipeline_logger.write(
         "PIPELINE START | approaches="
         + ",".join(selected_approaches)

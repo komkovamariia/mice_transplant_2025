@@ -29,6 +29,8 @@ jobs:
             "nbformat==5.10.4" \
             "numpy==2.5.1" \
             "pandas==3.0.3" \
+            joblib \
+            "threadpoolctl==3.6.0" \
             pyarrow \
             "pytest>=8.3,<9" \
             "scipy==1.18.0"

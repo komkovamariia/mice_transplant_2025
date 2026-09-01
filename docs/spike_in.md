@@ -117,6 +117,11 @@ simulation designs require explicit additional experiments.
 
 ## Outputs and reruns
 
+Independent doses can run as a bounded Slurm array after baseline completion; see
+[Aldan-3 parallel execution](aldan3_parallel.md). The scheduler default expands the
+grid to sixteen fractions from `1e-7` to `0.01` (0.00001% to 1%). The sequential CLI
+retains its three-dose default. Scheduling does not change any selection or test rule.
+
 Use the commands and file map in [RUN_GUIDE.md](../RUN_GUIDE.md). Each run uses a fresh
 identifier under `results/01_spike_in/`, `figures/01_spike_in/`, `audit_runs/spike_in/`
 and `logs/spike_in/`. Standard article results under `01_set_count` are preserved.

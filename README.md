@@ -13,7 +13,7 @@ figures, numerical tables and a record of its software environment. An optional
 across increasing UMI doses.
 
 [Run guide](RUN_GUIDE.md) · [Methods](docs/methods.md) ·
-[Spike-in protocol](docs/spike_in.md) · [Changes](CHANGELOG.md) ·
+[Spike-in protocol](docs/spike_in.md) · [Aldan-3 parallel runs](docs/aldan3_parallel.md) · [Changes](CHANGELOG.md) ·
 [Input provenance](docs/notebook_input_provenance.md)
 
 ## Installation and first run

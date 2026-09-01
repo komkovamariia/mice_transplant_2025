@@ -2,8 +2,8 @@
 
 The article notebooks run both libraries that parallelize internally (mirpy/seqtree,
 SciPy cKDTree, BLAS) and repseq routines that parallelize across samples.  This module
-uses every CPU that the current process is *allowed* to use, while avoiding nested
-process x BLAS oversubscription.
+uses the requested allocation while avoiding nested process x BLAS oversubscription.
+Outside a scheduler it defaults to one worker; explicit requests remain affinity-bound.
 
 Scientific invariants:
 - scheduling never changes clonotype definitions, filters, thresholds or contrasts;
@@ -34,17 +34,8 @@ def _positive_int(value: str | None) -> int | None:
     return n if n > 0 else None
 
 
-def available_cpus() -> int:
-    """Return CPUs available to this process, respecting Slurm/cpuset limits.
-
-    ``ARTICLE_N_JOBS`` is an explicit override.  Otherwise we take the most
-    restrictive positive signal among Linux CPU affinity and common Slurm variables,
-    which prevents a notebook from consuming CPUs belonging to another allocation.
-    """
-    override = _positive_int(os.environ.get("ARTICLE_N_JOBS"))
-    if override is not None:
-        return override
-
+def cpu_limit() -> int:
+    """Hard ceiling from affinity, scheduler allocation and host CPU count."""
     limits: list[int] = []
 
     if hasattr(os, "sched_getaffinity"):
@@ -60,10 +51,19 @@ def available_cpus() -> int:
         if n is not None:
             limits.append(n)
 
-    if limits:
-        return max(1, min(limits))
+    limits.append(max(1, os.cpu_count() or 1))
+    # A job without a per-task allocation must not use the entire shared node.
+    if os.environ.get("SLURM_JOB_ID") and not _positive_int(os.environ.get("SLURM_CPUS_PER_TASK")):
+        limits.append(1)
+    return max(1, min(limits))
 
-    return max(1, os.cpu_count() or 1)
+
+def available_cpus() -> int:
+    """Return the requested workers, always capped by the current allocation."""
+    requested = _positive_int(os.environ.get("ARTICLE_N_JOBS"))
+    if requested is None:
+        requested = _positive_int(os.environ.get("SLURM_CPUS_PER_TASK")) or 1
+    return min(requested, cpu_limit())
 
 
 def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int:
@@ -75,9 +75,10 @@ def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int
     """
     global _DEFAULT_WORKERS
 
-    n = int(n_jobs or available_cpus())
+    n = int(n_jobs) if n_jobs is not None else available_cpus()
     if n < 1:
         raise ValueError("n_jobs must be >= 1")
+    n = min(n, cpu_limit())
     _DEFAULT_WORKERS = n
 
     thread_env = {
@@ -92,6 +93,7 @@ def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int
         os.environ[key] = str(value)
     os.environ["OMP_DYNAMIC"] = "FALSE"
     os.environ["MKL_DYNAMIC"] = "FALSE"
+    os.environ["OMP_MAX_ACTIVE_LEVELS"] = "1"
 
     if verbose:
         affinity = None
@@ -113,7 +115,10 @@ def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int
 
 
 def _resolve_jobs(n_jobs: int | None, n_tasks: int | None = None) -> int:
-    n = int(n_jobs or _DEFAULT_WORKERS or available_cpus())
+    n = int(n_jobs) if n_jobs is not None else (_DEFAULT_WORKERS or available_cpus())
+    if n < 1:
+        raise ValueError("n_jobs must be >= 1")
+    n = min(n, cpu_limit())
     if n_tasks is not None:
         n = min(n, max(1, n_tasks))
     return max(1, n)
@@ -222,9 +227,12 @@ def parallel_map(
     if prefer != "threads":
         raise ValueError("prefer must be 'threads' or 'processes'")
 
-    return Parallel(n_jobs=n, prefer="threads", batch_size=batch_size)(
-        delayed(function)(item) for item in items
-    )
+    from threadpoolctl import threadpool_limits
+
+    with threadpool_limits(limits=1):
+        return Parallel(n_jobs=n, prefer="threads", batch_size=batch_size)(
+            delayed(function)(item) for item in items
+        )
 
 
 def permanova_parallel(

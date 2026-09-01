@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-01: Bounded Aldan-3 parallel sensitivity runs
+
+- Added preparation, read-only cluster diagnostics and explicit Slurm submission for the combined spike-in experiment.
+- Added a 24-CPU experiment budget: baseline up to 24 workers, then at most three independent 8-CPU dose notebooks.
+- Added sixteen scheduler-default family doses spanning 0.00001% to 1%.
+- Separated baseline, dose and finalization stages with success dependencies, isolated logs and exclusive case claims.
+- Added source/configuration/selection checks and retained immutable baseline matrix checksums.
+- Prevented explicit worker overrides from exceeding Slurm or affinity limits; defaulted unscheduled execution to one worker.
+- Parallelized historical two-sided Fisher tests in ordered batches, retaining one global BH correction.
+- Preserved the per-notebook edgeR model, mouse-level pooling, g1/control identities and all biological definitions.
+- Added scheduling and numerical-equivalence regression tests; real-data timing and peak memory require HPC measurement.
+
 ## 2026-09-01: Combined analysis and spike-in sensitivity
 
 ### Analysis

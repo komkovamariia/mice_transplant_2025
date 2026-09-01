@@ -45,7 +45,7 @@ The raw FASTQ directory is used by `presenting_repseq.ipynb` when MiXCR outputs 
 each biological stratum. The notebook reproduces the original
 chain-plus-sample-number metadata merge, applies the historical TRA exclusions, and
 invokes `repseq.intersections.count_table()` in aaV mode with zero mismatches. No
-minimum abundance threshold is applied. The runner produces eight separately executed
+minimum abundance threshold is applied. The runner produces nine separately executed
 notebooks under `audit_runs/`.
 
 ## Remaining derived-data boundary

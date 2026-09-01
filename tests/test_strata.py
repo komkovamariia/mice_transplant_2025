@@ -77,6 +77,24 @@ def test_tissue_stratum_keeps_sample_level_units():
     assert thymus["analysis_unit"].tolist() == thymus["sample_id"].tolist()
 
 
+def test_all_combined_includes_both_subsets_and_organs_and_is_first():
+    from src.strata import STRATA
+    from scripts.run_analysis import resolve_strata
+
+    frame = _annotated_rows()
+    cd8 = frame.copy()
+    cd8["_cell_subset"] = "cd8"
+    cd8["sample_id"] = cd8["sample_id"].str.replace("cd4", "cd8")
+    combined = select_stratum(pd.concat([frame, cd8]), "all_combined")
+    assert len(STRATA) == 9
+    assert resolve_strata("all") == list(STRATA)
+    assert STRATA[0] == "all_combined"
+    assert combined["sample_id"].nunique() == 8
+    assert combined["analysis_unit"].nunique() == 2
+    assert set(combined["_cell_subset"]) == {"cd4", "cd8"}
+    assert set(combined["_tissue"]) == {"thymus", "spleen"}
+
+
 def test_thymus_combined_pools_cd4_and_cd8_within_mouse():
     frame = _annotated_rows()
     cd8 = frame[frame["_tissue"].eq("thymus")].copy()

@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 STRATA = (
+    "all_combined",
     "cd4_thymus",
     "cd8_thymus",
     "cd4_spleen",
@@ -21,6 +22,7 @@ STRATA = (
 )
 
 STRATUM_LABELS = {
+    "all_combined": "CD4 + CD8 T cells, thymus + spleen pooled within mouse",
     "cd4_thymus": "CD4 T cells, thymus",
     "cd8_thymus": "CD8 T cells, thymus",
     "cd4_spleen": "CD4 T cells, spleen",
@@ -32,6 +34,11 @@ STRATUM_LABELS = {
 }
 
 STRATUM_DEFINITIONS = {
+    "all_combined": {
+        "cell_subsets": ("cd4", "cd8"),
+        "tissues": ("thymus", "spleen"),
+        "pool_within_mouse": True,
+    },
     "cd4_thymus": {
         "cell_subsets": ("cd4",),
         "tissues": ("thymus",),

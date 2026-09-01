@@ -26,11 +26,14 @@ The runner treats edgeR fitting as a required output contract. It reports a fail
 stratum when the quasi-likelihood model does not complete, which prevents an earlier
 plotting or dependency error from being interpreted as a complete differential result.
 
-## Eight-stratum extension
+## Combined analysis and nine-stratum extension
 
 The historical notebook analyzed all available compartments together. The active
-notebook applies the same operations independently to eight prespecified strata. Sample
-selection occurs before the first `repseq.intersections.count_table` call. In the four
+notebook starts with `all_combined` and applies the same operations independently to
+nine prespecified strata. The combined run restores the original CD4/CD8 and organ
+scope; mouse-level pooling changes the inferential analysis unit relative to the
+historical unpooled model, so numerical equivalence of those model fits is not claimed. Sample
+selection occurs before the first `repseq.intersections.count_table` call. In the five
 combined strata, multiple selected samples from the same mouse are summed before the
 edgeR model; exact-set operations still use the union of selected samples.
 
@@ -53,13 +56,13 @@ by `log2(4)`. Heatmap annotations switch between light and dark text using rende
 luminance. No pairwise similarity, UMI-correlation, cross-stratum, or mouse-level Venn
 heatmaps are generated.
 
-After all eight executions, the final run consolidates the stratum-level TRAV tables
+After all nine executions, the final run consolidates the stratum-level TRAV tables
 and creates one `figures/01_set_count.zip` archive. Descriptive exact-set evidence is
 kept separate from FDR-supported inference.
 
 ## Verification boundary
 
-Repository tests verify the sample-key merge, eight run names, notebook structure,
+Repository tests verify the sample-key merge, nine run names, notebook structure,
 English-only active content, plot-capture contract, and output audit. Final numerical
 verification requires the HPC study files and the edgeR-enabled environment because the
 MiXCR exports are not stored in this repository.

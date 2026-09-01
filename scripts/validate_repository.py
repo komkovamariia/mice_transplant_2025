@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CYRILLIC = re.compile(r"[\u0400-\u04FF]")
 EXPECTED_STRATA = (
+    "all_combined",
     "cd4_thymus",
     "cd8_thymus",
     "cd4_spleen",
@@ -23,6 +24,7 @@ EXPECTED_STRATA = (
     "spleen_combined",
 )
 EXPECTED_AUDIT_STEMS = (
+    "00_all_combined",
     "01_cd4_thymus",
     "02_cd8_thymus",
     "03_cd4_spleen",
@@ -50,6 +52,7 @@ PYTHON_FILES = [
     ROOT / "src/reporting.py",
     ROOT / "src/first_pass_input.py",
     ROOT / "src/figures.py",
+    ROOT / "src/spike_in.py",
     ROOT / "scripts/run_analysis.py",
     ROOT / "scripts/validate_repository.py",
 ]
@@ -219,8 +222,8 @@ def _validate_primary_notebook() -> None:
         "MICE_TCR_STRATUM",
         "_persist_open_figures",
         "figure_manifest.csv",
-        "eight_stratum_distinctive_trav_summary.csv",
-        *EXPECTED_STRATA,
+        "all_strata_distinctive_trav_summary.csv",
+        "STRATUM_DEFINITIONS",
     )
     missing = [token for token in required_tokens if token not in joined]
     if missing:
@@ -290,7 +293,7 @@ def _validate_later_notebooks() -> None:
         absent = [stratum for stratum in EXPECTED_STRATA if stratum not in joined]
         if absent:
             fail(
-                f"{path.relative_to(ROOT)} does not expose all eight strata: {absent}"
+                f"{path.relative_to(ROOT)} does not expose all nine strata: {absent}"
             )
         _compile_notebook_cells(path, notebook)
 

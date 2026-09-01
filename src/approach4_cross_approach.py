@@ -421,7 +421,7 @@ def compile_summary(
     leading = overall.head(10)["v_gene"].tolist()
     markdown = (
         "# Cross-stratum conclusion\n\n"
-        f"The V segments most frequently supported across the eight "
+        f"The V segments most frequently supported across the selected "
         f"biological strata were {format_gene_list(leading, limit=10)}. "
         "The accompanying table retains the consensus direction in each "
         "stratum, allowing compartment-specific and directionally mixed "

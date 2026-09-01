@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "Please cite this repository and the exact commit used for your analysis."
+type: software
+title: "Mouse TCR repertoires after transplantation"
+authors:
+  - name: "mice_transplant_2025 contributors"
+repository-code: "https://github.com/komkovamariia/mice_transplant_2025"
+url: "https://github.com/komkovamariia/mice_transplant_2025"
+abstract: "Notebook-based exact clonotype, V-segment preservation and differential abundance analyses, with count-matrix spike-in sensitivity experiments."
+keywords:
+  - T-cell receptor
+  - immune repertoire
+  - transplantation
+  - reproducible research

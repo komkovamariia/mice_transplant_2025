@@ -1,173 +1,128 @@
-# Mouse TCR repertoire analysis after transplantation
+# Mouse TCR repertoires after transplantation
 
-This repository contains a reproducible analysis of mouse T-cell receptor repertoires
-after transplantation. The primary exact-set and count-based analysis is implemented
-directly in [`venn_original.ipynb`](venn_original.ipynb).
+[![Repository validation](https://github.com/komkovamariia/mice_transplant_2025/actions/workflows/validation.yml/badge.svg)](https://github.com/komkovamariia/mice_transplant_2025/actions/workflows/validation.yml)
 
-The notebook was restored from the verified pre-refactor implementation at commit
-`6678766a0e8913ec2feacb3efb2daebd6a27eda4`. It retains the original TRA/TRB exact
-`aaV` intersections, V-segment retention profiles, mouse-level similarity analyses,
-UMI correlations, edgeR model, and Fisher sensitivity analysis. It does not use a
-derived Parquet table.
+Analysis notebooks for TRA/TRB repertoires in the mouse transplantation study. The
+primary workflow measures exact clonotype overlap, V-segment preservation and
+clonotype abundance. It compares g1 with g5 and g6 using Fisher tests and edgeR.
 
-## Analytical approaches
+The default analysis begins with **CD4 + CD8 T cells from thymus + spleen** and then
+runs the eight compartment-specific analyses. Each run produces an executed notebook,
+figures, numerical tables and a record of its software environment. An optional
+**spike-in experiment** tests recovery of a fixed family of observed TRA clonotypes
+across increasing UMI doses.
 
-| Order | Source notebook | Purpose |
-|---|---|---|
-| 1 | [`venn_original.ipynb`](venn_original.ipynb) | Exact aaV sets, TRA/TRB repertoire structure, edgeR, Fisher, and TRAV prioritization |
-| 2 | [`02_sequence_embedding_analysis.ipynb`](notebooks/02_sequence_embedding_analysis.ipynb) | Sequence-space enrichment and repertoire geometry |
-| 3 | [`03_clone_alloreactivity_analysis.ipynb`](notebooks/03_clone_alloreactivity_analysis.ipynb) | Mouse-normalized clone-level alloreactivity evidence |
-| 4 | [`04_cross_approach_comparison.ipynb`](notebooks/04_cross_approach_comparison.ipynb) | Direction-aware comparison of the completed approaches |
+[Run guide](RUN_GUIDE.md) · [Methods](docs/methods.md) ·
+[Spike-in protocol](docs/spike_in.md) · [Changes](CHANGELOG.md) ·
+[Input provenance](docs/notebook_input_provenance.md)
 
-Approach 1 is notebook-first by design. One parameterized source notebook is executed
-independently for each biological stratum, producing eight self-contained audit
-notebooks rather than one notebook containing eight opaque pipeline calls.
+## Installation and first run
 
-## Eight biological strata
+Use the study's Linux/HPC environment and existing MiXCR exports:
 
-| Order | Stratum key | Biological subset | Executed notebook |
-|---|---|---|---|
-| 1 | `cd4_thymus` | CD4, thymus | `audit_runs/01_cd4_thymus.executed.ipynb` |
-| 2 | `cd8_thymus` | CD8, thymus | `audit_runs/02_cd8_thymus.executed.ipynb` |
-| 3 | `cd4_spleen` | CD4, spleen | `audit_runs/03_cd4_spleen.executed.ipynb` |
-| 4 | `cd8_spleen` | CD8, spleen | `audit_runs/04_cd8_spleen.executed.ipynb` |
-| 5 | `cd4_combined` | CD4, thymus and spleen pooled within mouse | `audit_runs/05_cd4_thymus_spleen.executed.ipynb` |
-| 6 | `cd8_combined` | CD8, thymus and spleen pooled within mouse | `audit_runs/06_cd8_thymus_spleen.executed.ipynb` |
-| 7 | `thymus_combined` | Thymus, CD4 and CD8 pooled within mouse | `audit_runs/07_thymus_cd4_cd8.executed.ipynb` |
-| 8 | `spleen_combined` | Spleen, CD4 and CD8 pooled within mouse | `audit_runs/08_spleen_cd4_cd8.executed.ipynb` |
+```bash
+git clone https://github.com/komkovamariia/mice_transplant_2025.git
+cd mice_transplant_2025
+conda env create -f environment.yml
+conda activate mice-transplant-2025
+python scripts/validate_repository.py
+python scripts/run_analysis.py --approach 1
+```
 
-Stratification is applied to the sample index before any count table is constructed.
-For the four combined strata, counts are pooled within mouse before the edgeR model so
-paired samples are not treated as independent replicates.
+`python scripts/run_analysis.py` also selects Approach 1. The nine analyses run in
+sequence, beginning with `all_combined`. To run only the combined analysis:
 
-## Input provenance for Approach 1
+```bash
+python scripts/run_analysis.py --approach 1 --strata all_combined
+```
 
-The default HPC inputs are the same CSV and MiXCR route used by the historical
-notebook:
+Approach 1 reads these existing study files by default:
 
 ```text
 /projects/mice_transplant_2025/metadata_mice_transplant.csv
 /projects/mice_transplant_2025/test_run/clonosets_mice_transplant_2025_df.csv
-MiXCR clonotype exports referenced by the clonoset-index CSV
 ```
 
-The historical `alpha-N` and `beta-N` identifiers are matched to metadata before chain
-normalization. Exact clonotypes are defined as `(CDR3 amino-acid sequence, V segment)`
-with `overlap_type="aaV"` and `mismatches=0`. The three prespecified historical sample
-exclusions are retained. No minimum UMI threshold is introduced.
+The clonoset index must reference accessible MiXCR exports. Override paths with
+`--metadata-csv`, `--clonoset-index` and `--working-dir`, or the environment variables
+in [config/example.env](config/example.env). Raw FASTQ files and derived Parquet tables
+are not required for Approach 1.
 
-Approaches 2 and 3 use the later derived `clean_clonotypes_aaV.parquet` interface. That
-file is not required for Approach 1.
+## Biological strata
 
-## Repository layout
+The combined stratum pools the sampled CD4 and CD8 subsets. It does not identify a
+CD4/CD8 double-positive population. Combined analyses sum UMI counts within each
+mouse for inference, so tissues from the same mouse remain one biological replicate.
 
-```text
-mice_transplant_2025/
-├── venn_original.ipynb        # Complete source notebook for Approach 1
-├── notebooks/                 # Approaches 2 to 4
-├── src/                       # Shared code for later approaches and runtime control
-├── scripts/                   # Execution and validation commands
-├── audit_runs/                # Eight generated executed notebooks
-├── logs/                      # Pipeline and per-notebook cell logs
-├── figures/
-│   ├── 01_set_count/
-│   │   └── <stratum>/         # Every retained figure for that stratum
-│   └── 01_set_count.zip       # One archive of the complete Approach 1 figure folder
-└── results/
-    └── 01_set_count/
-        ├── <stratum>/         # Tables, manifest, and conclusion
-        └── eight_stratum_distinctive_trav_summary.csv
-```
+| Run order | Key | Cell subsets and organs | Executed notebook |
+|---|---|---|---|
+| First | `all_combined` | CD4 + CD8, thymus + spleen | `audit_runs/00_all_combined.executed.ipynb` |
+| 2 | `cd4_thymus` | CD4, thymus | `audit_runs/01_cd4_thymus.executed.ipynb` |
+| 3 | `cd8_thymus` | CD8, thymus | `audit_runs/02_cd8_thymus.executed.ipynb` |
+| 4 | `cd4_spleen` | CD4, spleen | `audit_runs/03_cd4_spleen.executed.ipynb` |
+| 5 | `cd8_spleen` | CD8, spleen | `audit_runs/04_cd8_spleen.executed.ipynb` |
+| 6 | `cd4_combined` | CD4, thymus + spleen | `audit_runs/05_cd4_thymus_spleen.executed.ipynb` |
+| 7 | `cd8_combined` | CD8, thymus + spleen | `audit_runs/06_cd8_thymus_spleen.executed.ipynb` |
+| 8 | `thymus_combined` | CD4 + CD8, thymus | `audit_runs/07_thymus_cd4_cd8.executed.ipynb` |
+| 9 | `spleen_combined` | CD4 + CD8, spleen | `audit_runs/08_spleen_cd4_cd8.executed.ipynb` |
 
-`figures/` is the only figure root. A notebook-level figure hook saves every explicit
-and displayed Matplotlib figure as PNG and PDF. Each stratum writes a manifest, and the
-runner fails if a listed file is missing.
+The original eight filenames remain stable. `venn_original.ipynb` is the executable
+source for every Approach 1 run. Sample selection precedes count-matrix construction.
 
-TRA and TRB V-segment bubble plots label the ten segments with the highest article
-retention score, `S(v) = f_full(v) × r(v)`. Their companion heatmaps use exactly those
-ten segments after the article's graphical thresholds of at least 0.6% initial share
-and at least 66% retention, and the four g1-containing regions: g1 only, g1∩g5, g1∩g6, and
-g1∩g5∩g6. Entropy is normalized by `log2(4)`. These are the only heatmaps generated by
-each stratum. Pairwise similarity, pairwise UMI, and within-group mouse Venn figures
-are omitted from the article output; their non-g2 tables remain available. Every saved
-figure title states the receptor chain, treatment-group context, cell subset, and organ.
-
-## Quick start on HPC
-
-Update the branch and environment:
+## Spike-in sensitivity experiment
 
 ```bash
-cd ~/mice_transplant_env_test
-git status --short
-git switch reproducible-article-environment
-git pull --ff-only origin reproducible-article-environment
-
-conda env update \
-  -n mice-transplant-2025 \
-  -f environment.yml \
-  --prune
-conda activate mice-transplant-2025
+python scripts/run_analysis.py --mode spike-in --spike-run-id sensitivity_01
 ```
 
-Run the complete first approach across all eight strata:
+This runs a fresh combined baseline, chooses a noncandidate TRAV with ten eligible
+observed aaV clonotypes, and adds the same family to g1 at **0.01%, 0.1% and 1%** of
+each sample's original UMI library. Each dose starts from frozen baseline matrices.
+Control counts remain unchanged. A fixed seed makes target selection reproducible.
+
+The protocol checks recovery in the g1 remainder, V-segment preservation and share,
+positive edgeR log2 fold change with FDR < 0.05, and movement in the final TRAV ranking.
+It records hypotheses that fail as well as those that pass. UMI share and unique-aaV
+share are reported separately. See [the protocol](docs/spike_in.md) for target
+eligibility, rounding, custom doses and interpretation of sensitivity bounds.
+
+## Results and figures
+
+| Artifact | Location |
+|---|---|
+| Primary analysis source | `venn_original.ipynb` |
+| Executed notebooks and logs | `audit_runs/`, `logs/` |
+| Standard figures, PNG and PDF | `figures/01_set_count/<stratum>/` |
+| Complete standard figure archive | `figures/01_set_count.zip` |
+| Standard numerical results | `results/01_set_count/<stratum>/` |
+| Nine-stratum TRAV summary | `results/01_set_count/all_strata_distinctive_trav_summary.csv` |
+| Spike-in notebooks | `audit_runs/spike_in/<run_id>/<case>.executed.ipynb` |
+| Spike-in results and selection | `results/01_spike_in/<run_id>/` |
+| Spike-in figures and archive | `figures/01_spike_in/<run_id>/`, `<run_id>.zip` |
+
+Every displayed Matplotlib figure is saved in PNG and PDF. There are two V-segment
+heatmaps per standard stratum or spike-in case: TRA and TRB. They use the ordered
+bubble-plot candidates selected by the article preservation score, with four
+regions containing g1. The [methods](docs/methods.md) specify the formulas and thresholds.
+
+A standard rerun replaces generated figures and tables for the selected strata.
+Spike-in runs require a fresh identifier and preserve ordinary results. The runner
+checks figure manifests and successful edgeR fitting before accepting completion.
+A failed run retains its executed notebook and cell log for diagnosis.
 
 ```bash
-python scripts/run_analysis.py --approach 1
-```
-
-Run only one stratum:
-
-```bash
-python scripts/run_analysis.py \
-  --approach 1 \
-  --strata cd4_thymus
-```
-
-Monitor the first stratum:
-
-```bash
+tail -f logs/00_all_combined.log
+# For the original first compartment:
 tail -f logs/01_cd4_thymus.log
-```
-
-Each log entry reports the current cell, total cell count, elapsed time, and remaining
-cells. See [`RUN_GUIDE.md`](RUN_GUIDE.md) for safe handling of local notebook changes,
-all commands, path overrides, and direct `nbconvert` execution.
-
-Replay a checkpointed run after interruption:
-
-```bash
+# Replay a standard run after interruption:
 python scripts/run_analysis.py --approach 1 --resume
 ```
 
-## Output contract
+## Additional approaches
 
-Each stratum produces:
-
-- one executed notebook under `audit_runs/`;
-- one cell-level log under `logs/`;
-- all displayed figures under `figures/01_set_count/<stratum>/` in PNG and PDF;
-- exact-set, similarity, UMI-correlation, Fisher, and edgeR tables under
-  `results/01_set_count/<stratum>/`;
-- a complete TRAV ranking and a concise stratum-specific conclusion;
-- a figure manifest verified by the runner.
-
-At the end of Approach 1, the runner creates `figures/01_set_count.zip` containing the
-complete `figures/01_set_count/` directory.
-
-Before a fresh run, generated figure and result directories for the requested strata
-are cleared. This prevents removed g2 and auxiliary outputs from surviving as stale
-files from an earlier execution.
-
-The output audit also requires a successfully fitted edgeR quasi-likelihood model for
-every requested stratum. A skipped or incomplete model terminates the run with an
-explicit error in the cell log.
-
-After all eight runs, the final notebook creates
-`results/01_set_count/eight_stratum_distinctive_trav_summary.csv`. A null inferential
-result is reported as such; descriptive exact-set rankings remain visible and are
-never relabeled as statistically supported.
-
-Run the later approaches only when their derived input is available:
+Approaches 2 and 3 require an existing, sample-resolved
+`clean_clonotypes_aaV.parquet`. Its required columns and the remaining preparation
+boundary are described in [input provenance](docs/notebook_input_provenance.md).
 
 ```bash
 python scripts/run_analysis.py --approach 2 --data-dir /absolute/path/to/derived_data
@@ -176,7 +131,11 @@ python scripts/run_analysis.py --approach 4
 python scripts/run_analysis.py --approach all --data-dir /absolute/path/to/derived_data
 ```
 
-## Validation
+Approach 2 examines sequence-space enrichment; Approach 3 integrates clone-level
+evidence; Approach 4 compares their TRAV rankings with Approach 1. All expose the same
+nine strata. They remain optional when reproducing the primary notebook analysis.
+
+## Reproducibility and availability
 
 ```bash
 python scripts/validate_repository.py
@@ -184,7 +143,16 @@ python -m compileall -q src scripts
 python -m pytest -q
 ```
 
-Repository validation checks the restored notebook structure, all eight run names,
-English-only active content, absence of committed notebook outputs, centralized figure
-persistence, and output-verification logic. Full numerical execution requires the study
-data and the edgeR-enabled Conda environment on HPC.
+CI checks the source notebooks, pooling, injected-count propagation, target selection,
+rounding and output contracts. A separate R-enabled job fits the notebook's actual
+edgeR cell on synthetic counts. These checks do not establish the study's biological
+results: numerical reproduction requires the study data and review of executed notebooks.
+
+The repository provides analysis code and environment specifications. Study MiXCR
+exports and the derived Parquet table are supplied separately; no public data accession
+or manuscript DOI is recorded here. Runtime results include source hashes, package
+versions and R session information. Cite the repository revision used for an analysis;
+[CITATION.cff](CITATION.cff) provides software citation metadata.
+
+Use [GitHub issues](https://github.com/komkovamariia/mice_transplant_2025/issues) for
+reproducible problems and [CONTRIBUTING.md](CONTRIBUTING.md) for change validation.

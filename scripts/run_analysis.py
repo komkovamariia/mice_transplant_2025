@@ -8,6 +8,7 @@ import contextlib
 import json
 import os
 import shutil
+import sys
 import threading
 import time
 import zipfile
@@ -20,6 +21,7 @@ from nbclient import NotebookClient
 
 
 STRATUM_RUNS = (
+    ("00_all_combined", "all_combined"),
     ("01_cd4_thymus", "cd4_thymus"),
     ("02_cd8_thymus", "cd8_thymus"),
     ("03_cd4_spleen", "cd4_spleen"),
@@ -256,6 +258,8 @@ def resolve_strata(value: str) -> list[str]:
     if value.strip().lower() == "all":
         return [key for _, key in STRATUM_RUNS]
     selected = [item.strip().lower() for item in value.split(",") if item.strip()]
+    if not selected:
+        raise SystemExit("Select at least one biological stratum.")
     unsupported = [item for item in selected if item not in STRATUM_BY_KEY]
     if unsupported:
         raise SystemExit(
@@ -330,19 +334,23 @@ def archive_first_approach_figures() -> Path:
     return archive_path
 
 
-def verify_first_approach_outputs(selected_strata: list[str]) -> None:
+def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None, spike_case=None) -> None:
     """Fail immediately when an executed notebook, table, or displayed figure is absent."""
     root = repo_root()
     missing = []
     for stratum in selected_strata:
         stem = STRATUM_BY_KEY[stratum]
+        result_dir = root / "results" / "01_set_count" / stratum
+        if spike_run is not None:
+            stem = f"spike_in/{spike_run}/{spike_case}"
+            result_dir = root / "results" / "01_spike_in" / spike_run / spike_case
         required = [
             root / "audit_runs" / f"{stem}.executed.ipynb",
             root / "logs" / f"{stem}.log",
-            root / "results" / "01_set_count" / stratum / "run_summary.json",
-            root / "results" / "01_set_count" / stratum / "trav_ranking.csv",
-            root / "results" / "01_set_count" / stratum / "distinctive_trav.csv",
-            root / "results" / "01_set_count" / stratum / "figure_manifest.csv",
+            result_dir / "run_summary.json",
+            result_dir / "trav_ranking.csv",
+            result_dir / "distinctive_trav.csv",
+            result_dir / "figure_manifest.csv",
         ]
         missing.extend(path for path in required if not path.is_file())
 
@@ -383,19 +391,88 @@ def verify_first_approach_outputs(selected_strata: list[str]) -> None:
         rendered = "; ".join(str(path.relative_to(root)) for path in missing[:20])
         raise RuntimeError(f"Approach 1 output validation failed; missing: {rendered}")
 
-    if set(selected_strata) == set(STRATUM_BY_KEY):
+    if spike_run is None and set(selected_strata) == set(STRATUM_BY_KEY):
         complete_run_files = [
             root
             / "results"
             / "01_set_count"
-            / "eight_stratum_distinctive_trav_summary.csv",
+            / "all_strata_distinctive_trav_summary.csv",
         ]
         missing_complete = [path for path in complete_run_files if not path.is_file()]
         if missing_complete:
             raise RuntimeError(
-                "The complete eight-stratum summary is missing: "
+                "The complete nine-stratum summary is missing: "
                 + "; ".join(str(path.relative_to(root)) for path in missing_complete)
             )
+
+
+def run_spike_experiment(arguments, base_environment, logger) -> None:
+    """Run a fresh baseline and independent doses through the primary notebook."""
+    root = repo_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from src.spike_in import (
+        load_snapshot_tables, select_targets, summarize_experiment,
+        validate_case_name, write_baseline_metrics,
+    )
+
+    if resolve_sequence(arguments.approach) != ["1"]:
+        raise ValueError("Spike-in uses --approach 1; run other approaches separately.")
+    if arguments.strata not in ("all", "all_combined"):
+        raise ValueError("Spike-in uses --strata all_combined.")
+    if arguments.resume:
+        raise ValueError("Spike-in experiments start from a fresh baseline; omit --resume.")
+    import math
+    fractions = sorted(set(float(value) for value in arguments.spike_fractions.split(",")))
+    if not fractions or any(not math.isfinite(f) or not 0 < f < 1 for f in fractions):
+        raise ValueError("Spike-in fractions must be finite numbers strictly between 0 and 1.")
+    if arguments.spike_clones < 1 or not 0 <= arguments.spike_max_g1_fraction < 1:
+        raise ValueError("Use a positive family size and a rarity fraction in [0, 1).")
+    run_id = validate_case_name(arguments.spike_run_id or datetime.now().strftime("%Y%m%dT%H%M%S%f"))
+    result_root = root / "results" / "01_spike_in" / run_id
+    figure_root = root / "figures" / "01_spike_in" / run_id
+    archive = figure_root.parent / f"{run_id}.zip"
+    if any(path.exists() for path in (result_root, figure_root,
+            archive, root / "audit_runs" / "spike_in" / run_id, root / "logs" / "spike_in" / run_id)):
+        raise FileExistsError(f"Spike-in run {run_id} already exists; choose a fresh --spike-run-id.")
+    result_root.mkdir(parents=True)
+    configuration = {
+        "run_id": run_id, "stratum": "all_combined", "fractions": fractions,
+        "seed": arguments.spike_seed, "n_clones": arguments.spike_clones,
+        "requested_v_gene": arguments.spike_v_gene,
+        "max_g1_fraction": arguments.spike_max_g1_fraction,
+    }
+    (result_root / "experiment.json").write_text(json.dumps(configuration, indent=2) + "\n")
+
+    def execute_case(case, fraction):
+        logger.write(f"SPIKE-IN | run={run_id} | case={case} | fraction={fraction:g}")
+        execute_notebook(root / "venn_original.ipynb", f"spike_in/{run_id}/{case}",
+            environment={**base_environment, "MICE_TCR_STRATUM": "all_combined",
+                "MICE_TCR_MODE": "spike-in", "MICE_TCR_SPIKE_RUN_ID": run_id,
+                "MICE_TCR_SPIKE_CASE": case, "MICE_TCR_SPIKE_FRACTION": str(fraction),
+                "MICE_TCR_FINALIZE_SUMMARY": "0"}, resume=False)
+        verify_first_approach_outputs(["all_combined"], spike_run=run_id, spike_case=case)
+
+    execute_case("baseline", 0)
+    baseline = result_root / "baseline"
+    selection = select_targets(load_snapshot_tables(baseline, "TRA"),
+        pd.read_csv(baseline / "tra_v_retention.csv"),
+        pd.read_csv(baseline / "trav_ranking.csv"),
+        v_gene=arguments.spike_v_gene, n_clones=arguments.spike_clones,
+        max_g1_fraction=arguments.spike_max_g1_fraction, seed=arguments.spike_seed)
+    (result_root / "selection.json").write_text(json.dumps(selection, indent=2) + "\n")
+    write_baseline_metrics(baseline, selection)
+    cases = ["baseline"]
+    for position, fraction in enumerate(fractions, 1):
+        case = f"dose_{position:02d}"
+        execute_case(case, fraction)
+        cases.append(case)
+    summarize_experiment(result_root, figure_root, cases)
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for path in sorted(figure_root.rglob("*")):
+            if path.is_file():
+                bundle.write(path, path.relative_to(figure_root.parent))
+    logger.write(f"SPIKE-IN COMPLETE | results={result_root.relative_to(root)} | archive={archive.relative_to(root)}")
 
 
 def main() -> int:
@@ -407,8 +484,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--approach",
-        default="all",
-        help="1, 2, 3, 4/compare, comma-separated values, or all (default).",
+        default="1",
+        help="1 (default), 2, 3, 4/compare, comma-separated values, or all.",
     )
     parser.add_argument(
         "--strata",
@@ -419,6 +496,14 @@ def main() -> int:
     parser.add_argument("--metadata-csv", type=Path)
     parser.add_argument("--clonoset-index", type=Path)
     parser.add_argument("--working-dir", type=Path)
+    parser.add_argument("--mode", choices=("standard", "spike-in"), default="standard")
+    parser.add_argument("--spike-v-gene", help="Optional exact noncandidate TRAV annotation.")
+    parser.add_argument("--spike-clones", type=int, default=10)
+    parser.add_argument("--spike-fractions", default="0.0001,0.001,0.01",
+                        help="Added family UMI fractions of each original g1 sample library.")
+    parser.add_argument("--spike-max-g1-fraction", type=float, default=1e-5)
+    parser.add_argument("--spike-seed", type=int, default=1031)
+    parser.add_argument("--spike-run-id", help="Fresh output identifier; otherwise use a timestamp.")
     parser.add_argument(
         "--resume",
         action="store_true",
@@ -438,6 +523,9 @@ def main() -> int:
         + ",".join(selected_strata)
     )
     try:
+        if arguments.mode == "spike-in":
+            run_spike_experiment(arguments, base_environment, pipeline_logger)
+            return 0
         for approach_position, key in enumerate(selected_approaches, start=1):
             name, relative_path = APPROACHES[key]
             notebook_path = root / relative_path
@@ -455,6 +543,7 @@ def main() -> int:
                     )
                     environment = {
                         **base_environment,
+                        "MICE_TCR_MODE": "standard",
                         "MICE_TCR_STRATUM": stratum,
                         "MICE_TCR_FINALIZE_SUMMARY": (
                             "1" if final_complete_run else "0"

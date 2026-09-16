@@ -18,9 +18,9 @@ def test_notebook_edger_recovers_injected_aav_with_real_r(tmp_path):
     from src.spike_in import apply_spike_to_tables, combine_count_tables
 
     rng = np.random.default_rng(1031)
-    # Independent mouse columns; shared background supports dispersion estimation.
+    # independent mouse columns; shared background supports dispersion estimation
     keys = pd.Index([(f"CASS{i:04d}", "TRAV1") for i in range(200)], tupleize_cols=False)
-    # Identifiers here label synthetic features; they are not asserted to be biological sequences.
+    # identifiers here label synthetic features; they are not asserted to be biological sequences
     tables = {}
     for group in ("g1", "g2", "g4", "g5", "g6"):
         columns = [f"{group}_m{i}" for i in range(6)]

@@ -83,7 +83,7 @@ def test_rounding_does_not_force_one_umi_per_clone():
     tables, _, _, selection = example()
     changed, dose = apply_spike_to_tables(tables, selection, 0.00005)
     assert dose.groupby("sample_id")["added_umi"].sum().to_dict() == {"a": 1, "b": 1}
-    assert len(changed["g1"]) == 2  # One family member remains truly absent.
+    assert len(changed["g1"]) == 2  # one family member remains truly absent
 
 
 def test_snapshot_roundtrip_detects_changed_counts_and_metadata(tmp_path):
@@ -136,7 +136,7 @@ def test_injected_counts_reach_real_notebook_exact_sets_and_pooled_inference(tmp
     scope.update({f"ct_{g}_aaV_tra": table for g, table in changed.items()})
     scope.update(metadata=md, POOL_WITHIN_MOUSE=True, RESULT_DIR=tmp_path,
                  combine_count_tables=combine_count_tables, display=lambda *a: None)
-    # The cell's scipy/statsmodels imports belong to the next Fisher step.
+    # the cell's scipy/statsmodels imports belong to the next Fisher step
     code = _cell("venn-differential-input")
     code = "\n".join(line for line in code.splitlines() if not line.startswith("from scipy")
                      and not line.startswith("from statsmodels"))

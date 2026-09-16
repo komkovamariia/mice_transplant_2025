@@ -35,6 +35,9 @@ jobs:
             "pytest>=8.3,<9" \
             "scipy==1.18.0"
 
+      - name: Check source comment style
+        run: python scripts/normalize_comments.py
+
       - name: Validate repository contract
         run: python scripts/validate_repository.py
 

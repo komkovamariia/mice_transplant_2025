@@ -180,7 +180,7 @@ def worker(path, stage):
     cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", "0"))
     if cpus < 1:
         raise RuntimeError("Missing SLURM_CPUS_PER_TASK.")
-    # Set limits before importing the numerical runner or launching a kernel.
+    # set limits before importing the numerical runner or launching a kernel
     os.environ.update(thread_environment(cpus))
     plan = load_plan(path)
     expected = {"baseline": plan["resources"]["baseline_cpus"],

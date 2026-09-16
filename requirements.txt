@@ -1,4 +1,4 @@
-# Python-side dependencies. Use environment.yml for the complete edgeR-enabled pipeline.
+# python-side dependencies. Use environment.yml for the complete edgeR-enabled pipeline
 
 mirpy-lib==3.4.0
 numpy==2.5.1

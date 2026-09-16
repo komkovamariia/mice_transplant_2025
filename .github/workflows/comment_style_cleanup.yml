@@ -33,6 +33,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src scripts tests .github/workflows/validation.yml config/example.env environment.yml requirements.txt
+          git add .gitignore src scripts tests notebooks venn_original.ipynb .github/workflows/validation.yml config/example.env environment.yml requirements.txt
           git commit -m "Normalize source comments"
           git push

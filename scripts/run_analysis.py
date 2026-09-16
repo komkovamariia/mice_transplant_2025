@@ -470,7 +470,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         raise ValueError("Source, input paths or spike-in settings differ from the baseline.")
 
     def claim(case):
-        # Exclusive creation prevents duplicate array submissions from overwriting a case.
+        # exclusive creation prevents duplicate array submissions from overwriting a case
         with (result_root / f"{case}.started.json").open("x") as handle:
             json.dump({"slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                        "started_at": datetime.now().isoformat()}, handle)

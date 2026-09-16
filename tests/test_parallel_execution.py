@@ -139,7 +139,7 @@ def test_independent_doses_keep_identity_and_baseline_runs_once(staged_run):
     root, args, logger, calls, summaries = staged_run
     run_analysis.run_spike_experiment(args, {}, logger)
     args.spike_stage = "dose"
-    # Out-of-order completion is normal for Slurm arrays.
+    # out-of-order completion is normal for Slurm arrays
     for index in (2, 1):
         args.spike_dose_index = index
         run_analysis.run_spike_experiment(args, {}, logger)

@@ -43,7 +43,7 @@ def validate_counts(table: pd.DataFrame) -> pd.DataFrame:
     if not np.isfinite(values).all() or (values < 0).any() or (values != np.floor(values)).any():
         raise ValueError("Spike-in requires finite, non-negative integer UMI counts.")
     out = out.astype(np.int64)
-    # Historical exact-set operations use the index as the presence set.
+    # historical exact-set operations use the index as the presence set
     return out.loc[out.sum(axis=1).gt(0)]
 
 
@@ -148,7 +148,7 @@ def select_targets(
     rng = np.random.default_rng(seed)
     chosen_gene = v_gene or str(rng.choice(sorted(enough)))
     candidates = enough[chosen_gene]
-    # Prefer absent-in-g1 aaV because their insertion can change exact-set retention.
+    # prefer absent-in-g1 aaV because their insertion can change exact-set retention
     absent = [key for key in candidates if key not in g1.index]
     rare = [key for key in candidates if key in g1.index]
     selected = []

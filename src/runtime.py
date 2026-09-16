@@ -52,7 +52,7 @@ def cpu_limit() -> int:
             limits.append(n)
 
     limits.append(max(1, os.cpu_count() or 1))
-    # A job without a per-task allocation must not use the entire shared node.
+    # A job without a per-task allocation must not use the entire shared node
     if os.environ.get("SLURM_JOB_ID") and not _positive_int(os.environ.get("SLURM_CPUS_PER_TASK")):
         limits.append(1)
     return max(1, min(limits))
@@ -282,7 +282,7 @@ def permanova_parallel(
     if n_perm <= 0:
         return F_obs, 1.0
 
-    # Generate permutations serially so the RNG stream is independent of worker count.
+    # generate permutations serially so the RNG stream is independent of worker count
     rng = np.random.default_rng(seed)
     perm_codes = np.empty((n_perm, n), dtype=np.int16 if a < 32768 else np.int32)
     for i in range(n_perm):

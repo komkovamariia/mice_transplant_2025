@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import re
 import tokenize
 from pathlib import Path
@@ -13,11 +14,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON_ROOTS = (ROOT / "src", ROOT / "scripts", ROOT / "tests")
 TEXT_FILES = (
+    ROOT / ".gitignore",
     ROOT / ".github" / "workflows" / "validation.yml",
     ROOT / "config" / "example.env",
     ROOT / "environment.yml",
     ROOT / "requirements.txt",
 )
+NOTEBOOK_FILES = (ROOT / "venn_original.ipynb",)
 SKIP_PREFIXES = (
     "#!",
     "#SBATCH",
@@ -94,10 +97,42 @@ def normalize_hash_comments(text: str) -> str:
     return "".join(output)
 
 
+def normalize_notebook(text: str) -> str:
+    notebook = json.loads(text)
+    changed = False
+    for cell in notebook.get("cells", []):
+        if cell.get("cell_type") != "code":
+            continue
+        source = cell.get("source", [])
+        if isinstance(source, list):
+            original = "".join(source)
+            revised = normalize_python_source(original)
+            if revised != original:
+                cell["source"] = revised.splitlines(keepends=True)
+                changed = True
+        elif isinstance(source, str):
+            revised = normalize_python_source(source)
+            if revised != source:
+                cell["source"] = revised
+                changed = True
+    if not changed:
+        return text
+    return json.dumps(notebook, ensure_ascii=False, indent=1) + "\n"
+
+
 def iter_python_files():
     for root in PYTHON_ROOTS:
         if root.exists():
             yield from sorted(root.rglob("*.py"))
+
+
+def iter_notebooks():
+    for path in NOTEBOOK_FILES:
+        if path.exists():
+            yield path
+    notebook_root = ROOT / "notebooks"
+    if notebook_root.exists():
+        yield from sorted(notebook_root.rglob("*.ipynb"))
 
 
 def update_file(path: Path, transform, write: bool) -> bool:
@@ -120,6 +155,10 @@ def main() -> int:
         if path.name == "normalize_comments.py":
             continue
         if update_file(path, normalize_python_source, args.write):
+            changed.append(path.relative_to(ROOT))
+
+    for path in iter_notebooks():
+        if update_file(path, normalize_notebook, args.write):
             changed.append(path.relative_to(ROOT))
 
     for path in TEXT_FILES:

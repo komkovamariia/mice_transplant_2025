@@ -1,17 +1,17 @@
-# Input data are supplied separately.
+# input data are supplied separately
 data/
 
-# Generated analysis state. Keep only the explanatory README files.
+# generated analysis state. Keep only the explanatory README files
 results/*
 !results/README.md
 figures/*
 !figures/README.md
 
-# Executed notebooks and durable runtime logs are generated on the analysis host.
+# executed notebooks and durable runtime logs are generated on the analysis host
 audit_runs/
 logs/
 
-# Python/Jupyter artifacts.
+# python/Jupyter artifacts
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
@@ -19,7 +19,7 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Local environments and editor files.
+# local environments and editor files
 .env
 .venv/
 .DS_Store

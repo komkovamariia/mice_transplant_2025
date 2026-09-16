@@ -1,24 +1,30 @@
-# Mouse TCR repertoires after transplantation
+# Reproducible analysis of mouse T-cell receptor repertoires after transplantation
 
 [![Repository validation](https://github.com/komkovamariia/mice_transplant_2025/actions/workflows/validation.yml/badge.svg)](https://github.com/komkovamariia/mice_transplant_2025/actions/workflows/validation.yml)
 
-Analysis notebooks for TRA/TRB repertoires in the mouse transplantation study. The
-primary workflow measures exact clonotype overlap, V-segment preservation and
-clonotype abundance. It compares g1 with g5 and g6 using Fisher tests and edgeR.
+**Authors:** Komkova M., Andreev V., Chernov P., Kofiadi I.
 
-The default analysis begins with **CD4 + CD8 T cells from thymus + spleen** and then
-runs the eight compartment-specific analyses. Each run produces an executed notebook,
-figures, numerical tables and a record of its software environment. An optional
-**spike-in experiment** tests recovery of a fixed family of observed TRA clonotypes
-across increasing UMI doses.
+This repository contains the reproducible analysis workflow for TRA and TRB repertoires
+in the mouse transplantation study. The primary analysis combines exact clonotype-set
+comparisons, V-segment retention, clonotype abundance and differential-abundance
+inference. A count-matrix spike-in experiment provides an explicit sensitivity analysis
+for recovery of a known TRA family through the same workflow.
+
+The default analysis begins with the combined **CD4+ and CD8+ T-cell repertoires from
+thymus and spleen** and then runs eight compartment-specific analyses. Each run records
+its executed notebook, numerical results, publication-ready figures and software
+provenance.
 
 [Run guide](RUN_GUIDE.md) · [Methods](docs/methods.md) ·
-[Spike-in protocol](docs/spike_in.md) · [Aldan-3 parallel runs](docs/aldan3_parallel.md) · [Changes](CHANGELOG.md) ·
-[Input provenance](docs/notebook_input_provenance.md)
+[Spike-in sensitivity analysis](docs/spike_in.md) ·
+[Aldan-3 parallel execution](docs/aldan3_parallel.md) ·
+[Input provenance](docs/notebook_input_provenance.md) ·
+[Repository writing and naming style](docs/repository_style.md) ·
+[Change history](CHANGELOG.md)
 
-## Installation and first run
+## Installation and first analysis
 
-Use the study's Linux/HPC environment and existing MiXCR exports:
+Use the study Linux/HPC environment and existing MiXCR exports:
 
 ```bash
 git clone https://github.com/komkovamariia/mice_transplant_2025.git
@@ -29,14 +35,15 @@ python scripts/validate_repository.py
 python scripts/run_analysis.py --approach 1
 ```
 
-`python scripts/run_analysis.py` also selects Approach 1. The nine analyses run in
-sequence, beginning with `all_combined`. To run only the combined analysis:
+`python scripts/run_analysis.py` also selects the primary exact-set and count-based
+analysis. The nine biological strata run in sequence, beginning with `all_combined`.
+To run only the combined analysis:
 
 ```bash
 python scripts/run_analysis.py --approach 1 --strata all_combined
 ```
 
-Approach 1 reads these existing study files by default:
+The primary analysis reads these existing study files by default:
 
 ```text
 /projects/mice_transplant_2025/metadata_mice_transplant.csv
@@ -44,85 +51,110 @@ Approach 1 reads these existing study files by default:
 ```
 
 The clonoset index must reference accessible MiXCR exports. Override paths with
-`--metadata-csv`, `--clonoset-index` and `--working-dir`, or the environment variables
-in [config/example.env](config/example.env). Raw FASTQ files and derived Parquet tables
-are not required for Approach 1.
+`--metadata-csv`, `--clonoset-index` and `--working-dir`, or with the environment
+variables in [config/example.env](config/example.env). Raw FASTQ files and derived
+Parquet tables are not required for the primary analysis.
 
 ## Biological strata
 
-The combined stratum pools the sampled CD4 and CD8 subsets. It does not identify a
-CD4/CD8 double-positive population. Combined analyses sum UMI counts within each
-mouse for inference, so tissues from the same mouse remain one biological replicate.
+The combined stratum pools the sampled CD4+ and CD8+ subsets. It does not represent a
+CD4/CD8 double-positive cell population. Combined count-based analyses sum UMI counts
+within each mouse so that tissues from the same mouse remain one biological replicate.
 
 | Run order | Key | Cell subsets and organs | Executed notebook |
 |---|---|---|---|
-| 1 | `all_combined` | CD4 + CD8, thymus + spleen | `audit_runs/00_all_combined.executed.ipynb` |
-| 2 | `cd4_thymus` | CD4, thymus | `audit_runs/01_cd4_thymus.executed.ipynb` |
-| 3 | `cd8_thymus` | CD8, thymus | `audit_runs/02_cd8_thymus.executed.ipynb` |
-| 4 | `cd4_spleen` | CD4, spleen | `audit_runs/03_cd4_spleen.executed.ipynb` |
-| 5 | `cd8_spleen` | CD8, spleen | `audit_runs/04_cd8_spleen.executed.ipynb` |
-| 6 | `cd4_combined` | CD4, thymus + spleen | `audit_runs/05_cd4_thymus_spleen.executed.ipynb` |
-| 7 | `cd8_combined` | CD8, thymus + spleen | `audit_runs/06_cd8_thymus_spleen.executed.ipynb` |
-| 8 | `thymus_combined` | CD4 + CD8, thymus | `audit_runs/07_thymus_cd4_cd8.executed.ipynb` |
-| 9 | `spleen_combined` | CD4 + CD8, spleen | `audit_runs/08_spleen_cd4_cd8.executed.ipynb` |
+| 1 | `all_combined` | CD4+ + CD8+, thymus + spleen | `audit_runs/00_all_combined.executed.ipynb` |
+| 2 | `cd4_thymus` | CD4+, thymus | `audit_runs/01_cd4_thymus.executed.ipynb` |
+| 3 | `cd8_thymus` | CD8+, thymus | `audit_runs/02_cd8_thymus.executed.ipynb` |
+| 4 | `cd4_spleen` | CD4+, spleen | `audit_runs/03_cd4_spleen.executed.ipynb` |
+| 5 | `cd8_spleen` | CD8+, spleen | `audit_runs/04_cd8_spleen.executed.ipynb` |
+| 6 | `cd4_combined` | CD4+, thymus + spleen | `audit_runs/05_cd4_thymus_spleen.executed.ipynb` |
+| 7 | `cd8_combined` | CD8+, thymus + spleen | `audit_runs/06_cd8_thymus_spleen.executed.ipynb` |
+| 8 | `thymus_combined` | CD4+ + CD8+, thymus | `audit_runs/07_thymus_cd4_cd8.executed.ipynb` |
+| 9 | `spleen_combined` | CD4+ + CD8+, spleen | `audit_runs/08_spleen_cd4_cd8.executed.ipynb` |
 
-The original eight filenames remain stable. `venn_original.ipynb` is the executable
-source for every Approach 1 run. Sample selection precedes count-matrix construction.
+`venn_original.ipynb` remains the stable executable source for every run of the primary
+analysis. The historical filename is retained because it is part of the reproducibility
+contract. In documentation and article-oriented descriptions it is referred to as the
+**primary exact-set and count-based analysis notebook**.
 
-## Spike-in sensitivity experiment
+## Spike-in sensitivity analysis
+
+A local sequential run can be started with:
 
 ```bash
 python scripts/run_analysis.py --mode spike-in --spike-run-id sensitivity_01
 ```
 
-This runs a fresh combined baseline, chooses a noncandidate TRAV with ten eligible
-observed aaV clonotypes, and adds the same family to g1 at **0.01%, 0.1% and 1%** of
-each sample's original UMI library. Each dose starts from frozen baseline matrices.
-Control counts remain unchanged. A fixed seed makes target selection reproducible.
+The experiment first creates a fresh combined baseline, selects a noncandidate TRAV
+family containing ten eligible observed aaV clonotypes and freezes that biological
+identity before any perturbation. Each dose is generated independently from the frozen
+baseline count matrices. Only g1 counts are modified; subtraction controls remain
+unchanged.
 
-The protocol checks recovery in the g1 remainder, V-segment preservation and share,
-positive edgeR log2 fold change with FDR < 0.05, and movement in the final TRAV ranking.
-It records hypotheses that fail as well as those that pass. UMI share and unique-aaV
-share are reported separately. See [the protocol](docs/spike_in.md) for target
-eligibility, rounding, custom doses and interpretation of sensitivity bounds.
+The current default dose grid is dense and approximately logarithmic, from **0.00001% to
+1% added family UMI relative to the original g1 sample library**. Custom fractions can
+be supplied explicitly, including larger doses when required for ranking-sensitivity
+experiments. Target selection is reproducible with a fixed seed.
+
+The protocol evaluates five linked outcomes: recovery of the introduced aaV clonotypes
+in the g1 remainder, increased TRAV remainder and retention, increased TRAV share in g1,
+positive edgeR log2 fold change with FDR < 0.05 for introduced aaV, and improvement of
+the selected TRAV in the final integrated ranking. See
+[Spike-in sensitivity analysis](docs/spike_in.md) for eligibility rules, rounding,
+parallel execution and interpretation limits.
+
+For bounded Aldan-3 execution, use `scripts/slurm_spike.py`. A prepared run follows the
+explicit dependency graph **baseline -> dose array -> final summary**, with the dose
+array throttled to the configured CPU budget.
 
 ## Results and figures
 
-| Artifact | Location |
+| Scientific output | Location |
 |---|---|
 | Primary analysis source | `venn_original.ipynb` |
-| Executed notebooks and logs | `audit_runs/`, `logs/` |
-| Standard figures, PNG and PDF | `figures/01_set_count/<stratum>/` |
+| Executed notebooks and cell logs | `audit_runs/`, `logs/` |
+| Standard publication figures | `figures/01_set_count/<stratum>/` |
 | Complete standard figure archive | `figures/01_set_count.zip` |
 | Standard numerical results | `results/01_set_count/<stratum>/` |
-| Nine-stratum TRAV summary | `results/01_set_count/all_strata_distinctive_trav_summary.csv` |
-| Spike-in notebooks | `audit_runs/spike_in/<run_id>/<case>.executed.ipynb` |
-| Spike-in results and selection | `results/01_spike_in/<run_id>/` |
-| Spike-in figures and archive | `figures/01_spike_in/<run_id>/`, `<run_id>.zip` |
+| Cross-stratum TRAV summary | `results/01_set_count/all_strata_distinctive_trav_summary.csv` |
+| Spike-in executed notebooks | `audit_runs/spike_in/<run_id>/<case>.executed.ipynb` |
+| Spike-in numerical results and target selection | `results/01_spike_in/<run_id>/` |
+| Spike-in sensitivity figures and archive | `figures/01_spike_in/<run_id>/`, `<run_id>.zip` |
 
-Every displayed Matplotlib figure is saved in PNG and PDF. There are two V-segment
-heatmaps per standard stratum or spike-in case: TRA and TRB. They use the ordered
-bubble-plot candidates selected by the article preservation score, with four
-regions containing g1. The [methods](docs/methods.md) specify the formulas and thresholds.
+Every displayed Matplotlib figure is persisted in PNG and PDF. Standard runs include
+TRA and TRB V-segment heatmaps built from the ordered candidates used by the article
+retention score. The formulas and biological interpretation are defined in
+[Methods](docs/methods.md).
 
 A standard rerun replaces generated figures and tables for the selected strata.
-Spike-in runs require a fresh identifier and preserve ordinary results. The runner
-checks figure manifests and successful edgeR fitting before accepting completion.
-A failed run retains its executed notebook and cell log for diagnosis.
+Spike-in runs require a fresh identifier and preserve ordinary analysis results. The
+runner verifies required numerical outputs, figure manifests and successful edgeR
+fitting before accepting a run as complete. A failed notebook execution retains its
+checkpoint and cell log for diagnosis.
 
 ```bash
 tail -f logs/00_all_combined.log
-# For the original first compartment:
+# original first compartment
 tail -f logs/01_cd4_thymus.log
-# Replay a standard run after interruption:
+# replay a standard run after interruption
 python scripts/run_analysis.py --approach 1 --resume
 ```
 
-## Additional approaches
+## Additional analyses
 
-Approaches 2 and 3 require an existing, sample-resolved
-`clean_clonotypes_aaV.parquet`. Its required columns and the remaining preparation
-boundary are described in [input provenance](docs/notebook_input_provenance.md).
+The optional analyses retain their stable command-line identifiers while using
+article-oriented names in documentation:
+
+| Command identifier | Scientific description |
+|---|---|
+| `--approach 2` | Sequence-space enrichment analysis |
+| `--approach 3` | Clone-level alloreactivity analysis |
+| `--approach 4` | Cross-method evidence comparison |
+
+The sequence-space and clone-level analyses require an existing, sample-resolved
+`clean_clonotypes_aaV.parquet`. Its required columns and preparation boundary are
+described in [Input provenance](docs/notebook_input_provenance.md).
 
 ```bash
 python scripts/run_analysis.py --approach 2 --data-dir /absolute/path/to/derived_data
@@ -131,28 +163,29 @@ python scripts/run_analysis.py --approach 4
 python scripts/run_analysis.py --approach all --data-dir /absolute/path/to/derived_data
 ```
 
-Approach 2 examines sequence-space enrichment; Approach 3 integrates clone-level
-evidence; Approach 4 compares their TRAV rankings with Approach 1. All expose the same
-nine strata. They remain optional when reproducing the primary notebook analysis.
+All analyses expose the same nine biological strata. The additional analyses remain
+optional when reproducing the primary notebook results.
 
-## Reproducibility and availability
+## Reproducibility and validation
 
 ```bash
+python scripts/normalize_comments.py
 python scripts/validate_repository.py
 python -m compileall -q src scripts
 python -m pytest -q
 ```
 
-CI checks the source notebooks, pooling, injected-count propagation, target selection,
-rounding and output contracts. A separate R-enabled job fits the notebook's actual
-edgeR cell on synthetic counts. These checks do not establish the study's biological
-results: numerical reproduction requires the study data and review of executed notebooks.
+Continuous integration checks source notebooks, mouse-level pooling, spike-in count
+propagation, target selection, dose rounding and output contracts. A separate R-enabled
+job fits the notebook's edgeR cell on synthetic counts. These checks verify software
+behavior; numerical reproduction of the biological results still requires the study
+data and review of the executed notebooks.
 
 The repository provides analysis code and environment specifications. Study MiXCR
-exports and the derived Parquet table are supplied separately; no public data accession
-or manuscript DOI is recorded here. Runtime results include source hashes, package
-versions and R session information. Cite the repository revision used for an analysis;
-[CITATION.cff](CITATION.cff) provides software citation metadata.
+exports and the derived Parquet table are supplied separately. Runtime results record
+source hashes, package versions and R session information. Cite the exact repository
+revision used for an analysis; [CITATION.cff](CITATION.cff) contains the software
+citation metadata and the study author list.
 
 Use [GitHub issues](https://github.com/komkovamariia/mice_transplant_2025/issues) for
 reproducible problems and [CONTRIBUTING.md](CONTRIBUTING.md) for change validation.

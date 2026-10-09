@@ -53,8 +53,9 @@ TRAV conclusion from the unstratified historical run.
 
 The historical notebook saved some figures explicitly and displayed others only
 inline. The restored notebook registers a Matplotlib figure hook before analytical
-cells execute. Explicit and displayed figures are saved as PNG and PDF under
-`figures/01_set_count/<stratum>/`. A per-stratum manifest is checked by the runner.
+cells execute. Explicit and displayed figures are saved as PNG under separate
+`figures/01_set_count/<stratum>/TRA/` and `figures/01_set_count/<stratum>/TRB/`
+directories. A per-stratum manifest is checked by the runner.
 
 For each chain, the bubble plot labels the ten V segments with the highest preservation
 score from the article, `S(v) = f_full(v) × r(v)`. The associated heatmap is restricted

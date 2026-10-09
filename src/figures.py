@@ -107,9 +107,13 @@ def write_figure_inventory() -> Path:
     for png_path in sorted(figure_root.rglob("*.png")):
         relative = png_path.relative_to(figure_root)
         parts = relative.parts
-        approach = parts[0] if len(parts) >= 2 else ""
-        stratum = parts[1] if len(parts) >= 3 else "cross_stratum"
-        chain = parts[2] if len(parts) >= 4 and parts[2] in {"TRA", "TRB"} else ""
+        approach = parts[0] if parts else ""
+        if len(parts) >= 3 and parts[1] in {"TRA", "TRB"}:
+            stratum = "cross_stratum"
+            chain = parts[1]
+        else:
+            stratum = parts[1] if len(parts) >= 3 else "cross_stratum"
+            chain = parts[2] if len(parts) >= 4 and parts[2] in {"TRA", "TRB"} else ""
         rows.append(
             {
                 "approach": approach,

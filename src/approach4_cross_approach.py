@@ -258,7 +258,7 @@ def _plot_consensus(
         APPROACH,
         stratum,
         "consensus_v_segment_ranking",
-            chain="TRA",
+        chain="TRA",
     )
 
 

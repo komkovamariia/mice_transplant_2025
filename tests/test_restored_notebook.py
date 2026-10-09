@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -28,15 +29,24 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "plt.savefig = _article_savefig" in joined
     assert "plt.show = _article_show" in joined
     assert "sns.set_theme(style=\"white\"" in joined
+    assert 'DOWNSAMPLE_DEPTH = int(os.environ.get("MICE_TCR_DOWNSAMPLE_UMI", "15000"))' in joined
+    assert 'functionality="f"' in joined
+    assert "by_umi=True" in joined
+    assert "downsample_group_tables(" in joined
+    assert 'globals()[f"raw_ct_{group}_aaV_tra"]' in joined
+    assert 'globals()[f"ct_{group}_aaV_tra"]' in joined
+    assert 'globals()[f"raw_ct_{group}_aaV_tra"] for group in ("g1", "g2", "g5", "g6")' in joined
+    assert "RAREFACTION_SEEDS" in joined
+    assert "BALANCE_SEEDS" in joined
     assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
     assert "top_n_labels=10" in joined
     assert "_adaptive_annotation_color" in joined
     assert "def plot_v_region_heatmap(" not in joined
     assert joined.count(
-        'save_path=str(FIGURE_DIR / "TRA_g1_top10_bubble_genes_heatmap.png")'
+        'save_path=str(FIGURE_DIR / "TRA_g1_v_segment_localization.png")'
     ) == 1
     assert joined.count(
-        'save_path=str(FIGURE_DIR / "TRB_g1_top10_bubble_genes_heatmap.png")'
+        'save_path=str(FIGURE_DIR / "TRB_g1_v_segment_localization.png")'
     ) == 1
     assert 'region_order = ["100", "110", "101", "111"]' in joined
     assert "np.log2(len(target_region_order))" in joined
@@ -56,6 +66,11 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "_boxplot.png" not in joined
     assert "mouse_venn_panel" not in joined
     assert "distinctive_trav_across_eight_strata" not in joined
+    assert "plt.subplots(1, 2" not in joined
+    assert "plt.subplots(2, 2" not in joined
+    assert "TRA g1: V-segment representation before and after background subtraction" in joined
+    assert "TRA g1: V-segment localization across g1-containing overlap regions" in joined
+    assert "TRA g1: Fisher and edgeR effect concordance" in joined
 
 
 def _load_notebook_function(function_name):
@@ -122,6 +137,52 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
     assert selected_genes == ["TRAV-top", "TRAV-middle"]
 
 
+
+
+def test_structural_downsampling_is_deterministic_and_excludes_low_depth_samples():
+    notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
+    source = "".join(next(cell for cell in notebook["cells"] if cell["id"] == "venn-inputs")["source"])
+    tree = ast.parse(source)
+    selected = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"_stable_sample_seed", "downsample_count_table"}
+    ]
+    namespace = {
+        "np": __import__("numpy"),
+        "pd": pd,
+        "hashlib": hashlib,
+        "DOWNSAMPLE_DEPTH": 15000,
+        "DOWNSAMPLE_SEED": 1031,
+    }
+    exec(compile(ast.Module(body=selected, type_ignores=[]), "downsample_helpers", "exec"), namespace)
+    downsample = namespace["downsample_count_table"]
+
+    index = pd.Index([("AAA", "TRAV1"), ("BBB", "TRAV2")], tupleize_cols=False)
+    table = pd.DataFrame(
+        {
+            "deep": [12000, 8000],
+            "shallow": [10000, 4999],
+        },
+        index=index,
+    )
+    first, audit_first = downsample(table, depth=15000, seed=1031)
+    second, audit_second = downsample(table, depth=15000, seed=1031)
+
+    pd.testing.assert_frame_equal(first, second)
+    pd.testing.assert_frame_equal(audit_first, audit_second)
+    assert first.columns.tolist() == ["deep"]
+    assert int(first["deep"].sum()) == 15000
+    assert audit_first.set_index("sample_id").loc["shallow", "kept_for_structural_analysis"] == False
+
+    with pytest.raises(ValueError, match="No sample reached"):
+        downsample(
+            table,
+            depth=15000,
+            seed=1031,
+            eligible_samples={"shallow"},
+        )
+
 def test_output_verification_rejects_missing_stratum_artifacts(tmp_path, monkeypatch):
     monkeypatch.setattr(run_analysis, "repo_root", lambda: tmp_path)
     with pytest.raises(RuntimeError, match="missing"):
@@ -153,14 +214,14 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
     )
     manifest_rows = []
     for chain in ("TRA", "TRB"):
-        png = figure_dir / f"{chain}_g1_top10_bubble_genes_heatmap.png"
-        pdf = png.with_suffix(".pdf")
+        chain_dir = figure_dir / chain
+        chain_dir.mkdir(parents=True, exist_ok=True)
+        png = chain_dir / f"{chain}_g1_v_segment_localization.png"
         png.write_bytes(b"png")
-        pdf.write_bytes(b"pdf")
         manifest_rows.append(
             {
+                "chain": chain,
                 "png": str(png.relative_to(tmp_path)),
-                "pdf": str(pdf.relative_to(tmp_path)),
             }
         )
     pd.DataFrame(manifest_rows).to_csv(

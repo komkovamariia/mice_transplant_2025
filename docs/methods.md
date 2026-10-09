@@ -10,10 +10,18 @@ and metadata-key handling are documented in the [equivalence audit](approach1_hi
 The first stratum, `all_combined`, selects the union of CD4 and CD8 samples from thymus
 and spleen, including source names mapped to thymus by the existing metadata rules.
 It restores the original combined sample scope. The other eight strata are retained.
-Exact-set calculations use the union of selected samples. Pooled strata sum UMI counts
-within treatment group and mouse before inference. They represent depth-weighted pools
-of the available libraries, not equally weighted tissue averages. Strata overlap and
-should not be treated as independent biological replicates of one another.
+For the structural branch, MiXCR clonotype exports are first restricted to functional
+rearrangements and interpreted using UMI counts. Each eligible library is independently
+downsampled to 15,000 functional UMI with a fixed seed before the exact aaV sets are
+constructed. Libraries below this depth are excluded from the structural calculation.
+Exact-set calculations then use the union of the retained sample-level sets. No
+clone-level minimum UMI threshold is imposed.
+
+For count-based inference, the same functional clonotypes are retained at their original
+integer UMI counts rather than rarefied. Pooled strata sum these counts within treatment
+group and mouse before edgeR and Fisher analysis. They represent depth-weighted pools of
+the available libraries, not equally weighted tissue averages. Strata overlap and should
+not be treated as independent biological replicates of one another.
 
 ## V-segment preservation and figures
 
@@ -65,12 +73,23 @@ exact-set descriptive evidence. The existing final evidence score is
 ties use significant-aaV counts, exclusive-aaV counts and V name. This evidence score
 has a different purpose from `S(v)`, which selects bubble-plot and heatmap genes.
 
+## Robustness checks
+
+The primary combined stratum reports two structural robustness checks in addition to the
+ordinary analysis. First, the 15,000-UMI rarefaction is repeated with independent random
+seeds and the overlap of the resulting top-ten V-segment shortlist with the fixed
+reference run is recorded. Second, structural subtraction is repeated after balancing
+the number of mice contributed by g1, g2, g4, g5 and g6 to the smallest group size.
+This tests whether the shortlist is driven by unequal opportunities to observe rare
+clonotypes in groups with different numbers of animals.
+
 ## Computational validation
 
 Regression tests check sample selection, mouse pooling, metadata joins, article score,
-four-region entropy, output persistence and spike-in propagation into the original
-notebook calculations. A separate CI job executes the actual notebook edgeR cell on
-synthetic count data with R and rpy2. The source notebooks are committed without outputs.
+four-region entropy, output persistence, functional 15,000-UMI structural processing and
+spike-in propagation into the original notebook calculations. A separate CI job executes
+the actual notebook edgeR cell on synthetic count data with R and rpy2. The source
+notebooks are committed without outputs.
 
 Study-level numerical results must be reproduced from the supplied data. Passing CI
 establishes the tested software behavior; it does not establish biological effect sizes

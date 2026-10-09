@@ -46,7 +46,7 @@
 
 - Restored the primary notebook workflow from historical commit `6678766` and removed DESeq2 from active analysis.
 - Corrected historical metadata keys before chain normalization.
-- Added independent executed notebooks, cell logs and PNG/PDF persistence for the original eight strata.
+- Added independent executed notebooks, cell logs and persisted publication figures for the original strata.
 - Aligned bubble labels with the article preservation score and restricted their companion heatmaps to four g1-containing regions.
 - Removed g2-centered duplicate figures and auxiliary pairwise/mouse-overlap figure panels from article outputs.
 - Added output validation and a complete `figures/01_set_count.zip` archive.

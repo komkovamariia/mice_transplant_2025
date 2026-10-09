@@ -1,8 +1,10 @@
 import zipfile
 
+import matplotlib.pyplot as plt
 import nbformat
 import pytest
 
+from src.figures import save_figure
 from scripts.run_analysis import (
     STRATUM_RUNS,
     _cell_description,
@@ -82,3 +84,23 @@ def test_prepare_and_archive_first_approach_outputs(tmp_path, monkeypatch):
     assert archive_path.is_file()
     with zipfile.ZipFile(archive_path) as archive:
         assert archive.namelist() == ["01_set_count/cd8_thymus/retained.png"]
+
+
+
+def test_publication_figure_output_is_png_only_and_chain_specific(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.figures.repository_root", lambda: tmp_path)
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.plot([0, 1], [0, 1])
+    ax.set_title("TRA test figure")
+
+    path = save_figure(
+        fig,
+        "01_set_count",
+        "all_combined",
+        "test_figure",
+        chain="TRA",
+    )
+
+    assert path == tmp_path / "figures" / "01_set_count" / "all_combined" / "TRA" / "test_figure.png"
+    assert path.is_file()
+    assert not path.with_suffix(".pdf").exists()

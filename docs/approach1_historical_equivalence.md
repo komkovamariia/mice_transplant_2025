@@ -13,14 +13,22 @@ last verified notebook-first implementation at commit
 | Historical key | Construct `<metadata chain>-<sample_no>` before chain normalization, preserving keys such as `alpha-100` and `beta-100`. |
 | Exclusions | Retain the three prespecified TRA sample exclusions from the historical notebook. |
 | Clonotype | Use exact `(CDR3aa, V)` features through `overlap_type="aaV"` and `mismatches=0`. |
-| TRA/TRB sets | Retain g1 to g6 count tables, the g1-centered five-circle set diagrams, exact g1 subtraction, V-segment retention tables, and TRA/TRB bubble plots. g2-centered duplicates are excluded from this study. |
+| TRA/TRB sets | Retain g1 to g6 group definitions, the g1-centered five-circle set diagrams, exact g1 subtraction, V-segment retention tables, and TRA/TRB bubble plots. g2-centered duplicates are excluded from this study. Structural sets now use functional clonotypes downsampled to 15,000 UMI per eligible library. |
 | Repertoire similarity | Retain non-g2 mouse-level TRA/TRB Jensen-Shannon, rank-correlation, and UMI-correlation tables. Auxiliary pairwise figures are excluded from the article output. |
 | Fisher | Compare pooled g1 and g5+g6 feature counts with the historical pseudocount-adjusted log2 ratio and Benjamini-Hochberg correction. |
 | edgeR | Retain TMM normalization, `filterByExpr`, quasi-likelihood fitting, and the g1 coefficient relative to pooled g5+g6 annotation. |
-| Thresholds | Introduce no minimum UMI or read-count threshold. |
+| Thresholds | Introduce no clone-level minimum UMI or read-count threshold. A library-level depth requirement of 15,000 functional UMI is used for structural set analysis. |
 
 The active differential section contains edgeR and the Fisher sensitivity analysis
-only. No additional differential-expression model is fitted.
+only. No additional differential-expression model is fitted. These count models use
+functional raw integer UMI matrices; structural rarefaction is not applied to edgeR or
+Fisher counts.
+
+The 15,000-UMI structural rarefaction is an intentional methodological strengthening
+relative to the historical notebook, whose set-construction call did not pass an active
+rarefaction filter. The exact aaV definition, group contrast and subtraction logic are
+preserved, but numerical equivalence of structural counts to that historical run is no
+longer claimed.
 
 The runner treats edgeR fitting as a required output contract. It reports a failed
 stratum when the quasi-likelihood model does not complete, which prevents an earlier
@@ -45,8 +53,9 @@ TRAV conclusion from the unstratified historical run.
 
 The historical notebook saved some figures explicitly and displayed others only
 inline. The restored notebook registers a Matplotlib figure hook before analytical
-cells execute. Explicit and displayed figures are saved as PNG and PDF under
-`figures/01_set_count/<stratum>/`. A per-stratum manifest is checked by the runner.
+cells execute. Explicit and displayed figures are saved as PNG under separate
+`figures/01_set_count/<stratum>/TRA/` and `figures/01_set_count/<stratum>/TRB/`
+directories. A per-stratum manifest is checked by the runner.
 
 For each chain, the bubble plot labels the ten V segments with the highest preservation
 score from the article, `S(v) = f_full(v) × r(v)`. The associated heatmap is restricted

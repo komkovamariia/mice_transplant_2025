@@ -239,8 +239,8 @@ def _validate_primary_notebook() -> None:
         'region_order = ["100", "110", "101", "111"]',
         "np.log2(len(target_region_order))",
         "retention_score",
-        "TRA_g1_top10_bubble_genes_heatmap.png",
-        "TRB_g1_top10_bubble_genes_heatmap.png",
+        "TRA_g1_v_segment_localization.png",
+        "TRB_g1_v_segment_localization.png",
     )
     missing_scope = [token for token in required_figure_scope if token not in joined]
     if missing_scope:

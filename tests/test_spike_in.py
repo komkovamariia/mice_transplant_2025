@@ -134,6 +134,7 @@ def test_injected_counts_reach_real_notebook_exact_sets_and_pooled_inference(tmp
         for g, table in changed.items() for sample in table.columns
     ])
     scope.update({f"ct_{g}_aaV_tra": table for g, table in changed.items()})
+    scope.update({f"raw_ct_{g}_aaV_tra": table for g, table in changed.items()})
     scope.update(metadata=md, POOL_WITHIN_MOUSE=True, RESULT_DIR=tmp_path,
                  combine_count_tables=combine_count_tables, display=lambda *a: None)
     # the cell's scipy/statsmodels imports belong to the next Fisher step
@@ -209,4 +210,11 @@ def test_summary_records_entry_from_unranked_baseline_without_inventing_a_rank(t
     assert pd.isna(summary.loc[1, "rank_improvement"])
     assert summary.loc[1, "entered_ranking"]
     assert summary.loc[1, "rank_improved"]
-    assert (tmp_path / "figures/spike_in_sensitivity.pdf").is_file()
+    expected = {
+        "spike_exact_recovery.png",
+        "spike_edger_recovery.png",
+        "spike_umi_share.png",
+        "spike_final_rank.png",
+    }
+    assert {path.name for path in (tmp_path / "figures" / "TRA").glob("*.png")} == expected
+    assert not list((tmp_path / "figures").rglob("*.pdf"))

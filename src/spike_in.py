@@ -326,26 +326,74 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
     frame.to_csv(result_root / "spike_in_summary.csv", index=False)
     bounds = sensitivity_summary(frame)
     (result_root / "sensitivity_bounds.json").write_text(json.dumps(bounds, indent=2) + "\n")
-    import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8), layout="constrained")
+    import matplotlib.pyplot as plt
+    from src.figures import CORAL, PURPLE, apply_article_style
+
+    apply_article_style()
+    output = figure_root / "TRA"
+    output.mkdir(parents=True, exist_ok=True)
     x = np.arange(len(frame))
     labels = ["baseline" if f == 0 else f"{100 * f:g}%" for f in frame["fraction"]]
-    for ax, column, title in zip(axes.flat,
-        ["recovery_fraction", "edger_positive_recovery_fraction", "v_umi_share_g1", "v_final_rank"],
-        ["Selected aaV in g1 remainder", "Selected aaV: positive logFC and FDR < 0.05",
-         "Selected TRAV UMI share in g1", "Selected TRAV final rank"]):
-        ax.plot(x, frame[column], marker="o", color="#176B87")
-        ax.set_xticks(x, labels)
-        ax.set_title(title)
-        ax.set_xlabel("Added family UMI / original g1 sample UMI")
-        ax.spines[["top", "right"]].set_visible(False)
-    axes[1, 1].invert_yaxis()
-    fig.suptitle(f"TRA | g1 | CD4 + CD8 | thymus + spleen | {frame.iloc[0]['v_gene']} spike-in")
-    figure_root.mkdir(parents=True, exist_ok=True)
-    for extension in ("png", "pdf"):
-        fig.savefig(figure_root / f"spike_in_sensitivity.{extension}", dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    tick_positions = np.arange(0, len(frame), 2)
+    if tick_positions[-1] != len(frame) - 1:
+        tick_positions = np.append(tick_positions, len(frame) - 1)
+
+    panels = [
+        (
+            "recovery_fraction",
+            "Exact aaV recovery",
+            "Recovered aaV fraction",
+            "spike_exact_recovery.png",
+            "all_selected_in_remainder",
+            False,
+        ),
+        (
+            "edger_positive_recovery_fraction",
+            "edgeR recovery",
+            "Significant aaV fraction",
+            "spike_edger_recovery.png",
+            "all_edger_positive_fdr",
+            False,
+        ),
+        (
+            "v_umi_share_g1",
+            f"{frame.iloc[0]['v_gene']} UMI share",
+            "UMI share in g1",
+            "spike_umi_share.png",
+            None,
+            False,
+        ),
+        (
+            "v_final_rank",
+            "Integrated V-segment rank",
+            "Integrated rank",
+            "spike_final_rank.png",
+            None,
+            True,
+        ),
+    ]
+
+    for column, title, ylabel, filename, pass_column, invert_y in panels:
+        fig, ax = plt.subplots(figsize=(7.2, 4.8))
+        ax.plot(x, frame[column], marker="o", markersize=4.5, linewidth=1.7, color=CORAL)
+        if pass_column is not None:
+            passing = frame.index[frame[pass_column].fillna(False)]
+            if len(passing):
+                first = int(passing[0])
+                ax.axvline(first, color=PURPLE, linestyle=":", linewidth=1.2)
+                ax.scatter([first], [frame.loc[first, column]], s=70, color=PURPLE, zorder=4)
+        ax.set_xticks(tick_positions, [labels[i] for i in tick_positions], rotation=45, ha="right")
+        ax.set_xlabel("Added family UMI relative to the original g1 UMI library")
+        ax.set_ylabel(ylabel)
+        ax.set_title(f"TRA g1: {title}")
+        ax.grid(False)
+        if invert_y:
+            ax.invert_yaxis()
+        fig.tight_layout()
+        fig.savefig(output / filename, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
     report = ["# Spike-in sensitivity experiment", "",
         f"Selected V segment: {frame.iloc[0]['v_gene']}. Family size: {int(frame.iloc[0]['n_selected'])} aaV.",
         "", bounds["interpretation"], "",
@@ -354,3 +402,4 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
         "See spike_in_summary.csv, sensitivity_bounds.json and each case's spike_clonotype_recovery.csv.", ""]
     (result_root / "conclusion.md").write_text("\n".join(report))
     return frame
+

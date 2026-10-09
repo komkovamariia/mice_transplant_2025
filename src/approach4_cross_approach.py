@@ -258,6 +258,7 @@ def _plot_consensus(
         APPROACH,
         stratum,
         "consensus_v_segment_ranking",
+        chain="TRA",
     )
 
 
@@ -416,6 +417,7 @@ def compile_summary(
             APPROACH,
             None,
             "overall_cross_stratum_consensus",
+            chain="TRA",
         )
 
     leading = overall.head(10)["v_gene"].tolist()

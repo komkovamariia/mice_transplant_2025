@@ -48,7 +48,7 @@ The clonoset index points to the MiXCR exports used by the notebook. Paths can b
 | 8 | `thymus_combined` | CD4+ + CD8+, thymus | `audit_runs/07_thymus_cd4_cd8.executed.ipynb` |
 | 9 | `spleen_combined` | CD4+ + CD8+, spleen | `audit_runs/08_spleen_cd4_cd8.executed.ipynb` |
 
-For pooled strata, UMI counts from repeated samples of the same mouse are summed before count-based inference. Each treatment-group/mouse pair remains one analysis unit.
+For pooled strata, UMI counts from repeated samples of the same mouse are summed before count-based inference. Each treatment-group/mouse pair remains one analysis unit. The `all_combined` stratum is the primary discovery analysis and contains CD4+ and CD8+ libraries from both thymus and spleen.
 
 The main source notebook is `venn_original.ipynb`. The filename is kept because it is used by the runner and by archived analyses.
 
@@ -73,14 +73,15 @@ For Aldan-3, use `scripts/slurm_spike.py`; the current cluster setup is describe
 | Main analysis source | `venn_original.ipynb` |
 | Executed notebooks | `audit_runs/` |
 | Logs | `logs/` |
-| Figures | `figures/01_set_count/<stratum>/` |
+| TRA figures | `figures/01_set_count/<stratum>/TRA/` |
+| TRB figures | `figures/01_set_count/<stratum>/TRB/` |
 | Figure archive | `figures/01_set_count.zip` |
 | Numerical results | `results/01_set_count/<stratum>/` |
 | Cross-stratum TRAV summary | `results/01_set_count/all_strata_distinctive_trav_summary.csv` |
 | Spike-in results | `results/01_spike_in/<run_id>/` |
 | Spike-in figures | `figures/01_spike_in/<run_id>/` |
 
-Figures from the primary analysis are saved as PNG and PDF. The retained TRA and TRB heatmaps use the same candidate ordering as the article analysis. Formulas and score definitions are documented in [docs/methods.md](docs/methods.md).
+Publication figures from the primary analysis are saved as PNG only. TRA and TRB figures are kept in separate chain directories, and multi-panel manuscript layouts are assembled outside the repository. The structural branch retains functional clonotypes and downsamples every eligible library to 15,000 UMI before exact set construction; low-depth libraries are excluded from that structural calculation. edgeR and Fisher use the corresponding functional raw UMI matrices, with edgeR providing library-size and composition normalization. The combined analysis also reports repeated-rarefaction and balanced-mouse stability checks. Formulas and score definitions are documented in [docs/methods.md](docs/methods.md).
 
 Progress can be followed directly from the logs:
 

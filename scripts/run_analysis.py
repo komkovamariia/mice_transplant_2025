@@ -370,18 +370,18 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
         manifest = pd.read_csv(manifest_path)
         if manifest.empty:
             raise RuntimeError(f"Figure manifest is empty for {stratum}.")
-        heatmap_names = {
-            Path(path).name
-            for path in manifest["png"].dropna().astype(str)
-            if "heatmap" in Path(path).name.lower()
+        figure_names = {
+            Path(path).name for path in manifest["png"].dropna().astype(str)
         }
-        expected_heatmap_names = {
-            "TRA_g1_top10_bubble_genes_heatmap.png",
-            "TRB_g1_top10_bubble_genes_heatmap.png",
+        required_localization = {
+            "TRA_g1_v_segment_localization.png",
+            "TRB_g1_v_segment_localization.png",
         }
-        if heatmap_names != expected_heatmap_names:
+        missing_localization = required_localization - figure_names
+        if missing_localization:
             raise RuntimeError(
-                f"Unexpected heatmap output for {stratum}: {sorted(heatmap_names)}"
+                f"Missing V-segment localization figure for {stratum}: "
+                f"{sorted(missing_localization)}"
             )
         for relative in manifest["png"].dropna().astype(str):
             path = root / relative

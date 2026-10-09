@@ -109,6 +109,7 @@ def _plot_candidate_scores(
             APPROACH,
             stratum,
             "integrated_candidate_ranking",
+            chain="TRA",
         )
 
     by_v_gene = (
@@ -139,6 +140,7 @@ def _plot_candidate_scores(
             APPROACH,
             stratum,
             "v_segment_candidate_support",
+            chain="TRA",
         )
 
 

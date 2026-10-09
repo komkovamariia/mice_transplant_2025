@@ -241,6 +241,7 @@ def _plot_density(
             APPROACH,
             stratum,
             "density_v_segment_ranking",
+            chain="TRA",
         )
 
     if not enriched.empty:
@@ -259,6 +260,7 @@ def _plot_density(
             APPROACH,
             stratum,
             "density_enrichment_scatter",
+            chain="TRA",
         )
 
 
@@ -389,6 +391,7 @@ def _sample_geometry(
         APPROACH,
         stratum,
         "repertoire_mmd_pcoa",
+            chain="TRA",
     )
 
     output = _output_dir()
@@ -459,6 +462,7 @@ def _witness(
             APPROACH,
             stratum,
             "witness_v_segment_ranking",
+            chain="TRA",
         )
     return result
 

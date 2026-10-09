@@ -143,6 +143,39 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
 
 
 
+def test_figure_chain_detection_ignores_repository_name_and_routes_trb():
+    notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
+    source = "".join(
+        next(cell for cell in notebook["cells"] if cell["id"] == "venn-figure-capture")["source"]
+    )
+    tree = ast.parse(source)
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_figure_chain"
+    )
+    namespace = {
+        "Path": Path,
+        "re": re,
+        "ACTIVE_CHAIN": "TRA and TRB",
+        "_figure_title": lambda value: value,
+    }
+    exec(
+        compile(ast.Module(body=[function], type_ignores=[]), "figure_chain", "exec"),
+        namespace,
+    )
+    detect = namespace["_figure_chain"]
+
+    assert detect(
+        "TRB g1: 15,000-UMI rarefaction stability",
+        "/projects/mice_transplant_2025/figures/TRB_g1_rarefaction_stability.png",
+    ) == "TRB"
+    assert detect(
+        "TRA g1: 15,000-UMI rarefaction stability",
+        "/projects/mice_transplant_2025/figures/TRA_g1_rarefaction_stability.png",
+    ) == "TRA"
+
+
 def test_structural_downsampling_is_deterministic_and_excludes_low_depth_samples():
     notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
     source = "".join(next(cell for cell in notebook["cells"] if cell["id"] == "venn-inputs")["source"])

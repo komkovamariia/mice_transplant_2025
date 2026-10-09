@@ -48,8 +48,12 @@ The recorded dose includes both `B_s / L_s` and `B_s / (L_s + B_s)`.
 
 The three default fractions are 0.0001, 0.001 and 0.01: 0.01%, 0.1% and 1%. These are
 **total family doses**, not doses per clonotype. Every dose starts from the same
-baseline. Original UMI counts remain in place; added counts increase library size.
-No additional UMI filter, resampling or library-depth matching is applied.
+baseline. Original UMI counts remain in place and added counts increase the raw
+functional UMI library size. The structural branch then applies the same fixed
+15,000-UMI rarefaction used by the standard analysis. Library eligibility is frozen
+from the unperturbed baseline, so a spike-in cannot make a previously low-depth
+library enter the structural analysis. edgeR and Fisher retain the perturbed raw
+functional integer UMI counts rather than the rarefied matrices.
 
 At low depth, a requested dose may round to zero or supply fewer UMI than family
 members. Such aaV remain absent until they actually receive a positive count. The
@@ -63,9 +67,12 @@ TMM normalization, expression filtering and edgeR inference are rerun for each d
 
 A baseline plus each dose executes the same full source notebook, including its
 TRA/TRB figures, retention tables, Fisher analysis, edgeR and final TRAV aggregation.
-Exact-set analysis and differential inference consume the same perturbed matrices.
-The latter uses the union of g1, g2, g5 and g6 matrices and then pools samples within
-mouse. g2 is excluded from the g1 versus g5+g6 edgeR contrast.
+Both branches originate from the same perturbed functional UMI matrices, but they use
+them differently. Exact-set analysis independently rarefies each baseline-eligible
+library to 15,000 UMI before presence and absence sets are constructed. Differential
+inference keeps raw integer UMI counts, uses the union of g1, g2, g5 and g6 matrices
+and then pools samples within mouse. g2 is excluded from the g1 versus g5+g6 edgeR
+contrast.
 
 Snapshots are loaded for both chains in perturbed runs. Matrix checksums and metadata
 identity are verified before reuse. `selection.json`, `experiment.json`, source hashes,

@@ -98,7 +98,8 @@ if they need to be retained for comparison.
 After successful execution, inspect `results/01_set_count/<stratum>/run_summary.json`,
 `trav_ranking.csv`, `tra_v_retention.csv`, `tra_analysis_units.csv`,
 `tra_structural_depth_audit.csv`, `trb_structural_depth_audit.csv`, `provenance.json`
-and `R_sessionInfo.txt`. For `all_combined`, also inspect
+and `R_sessionInfo.txt`. For `all_combined`, `cd4_combined` and `cd8_combined`,
+also inspect
 `representative_downsampling_seed.json`, `tra_rarefaction_seed_summary.csv`,
 `tra_top10_only_g1_by_seed.csv`, `tra_top10_only_g1_summary.csv`,
 `tra_rarefaction_top10_stability.csv`,
@@ -117,7 +118,7 @@ stored separately under `figures/01_set_count/<stratum>/TRA/` and
 `TRB_g1_v_segment_localization.png`. These show at most ten threshold-eligible
 V segments. The dumbbell plot is ordered by decreasing structural score S(v); the
 localization heatmap uses the same shortlisted V segments but orders rows by decreasing
-g1-only regional share. The combined TRA folder also contains
+g1-only regional share. These three representative-seed strata also contain
 `TRA_g1_top10_only_g1_stability.png`, which summarizes the 100 baseline rarefactions
 and reports mean, standard deviation, representative-seed value and interquartile range
 for each consensus TRAV segment.

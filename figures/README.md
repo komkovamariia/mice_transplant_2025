@@ -1,7 +1,7 @@
 # Figures
 
 All analysis figures are stored beneath this directory. The primary notebook saves
-every retained figure as PNG and PDF; each case has a verified figure manifest.
+every retained figure as PNG; each case has a verified figure manifest.
 
 | Analysis | Figure directory | Archive |
 |---|---|---|

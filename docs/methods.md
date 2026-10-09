@@ -43,10 +43,11 @@ S(v) = f_full(v) * r(v)
 
 Graphical candidates require `f_full(v) >= 0.006` and `r(v) >= 0.66`. Up to ten are
 selected in descending preservation score `S(v)`, with deterministic tie handling.
-The dumbbell plot is ordered by decreasing `S(v)`. Bubble labels and the companion
-heatmap use the same shortlisted genes for each chain, while heatmap rows are ordered by
-decreasing g1-only regional share and then by `S(v)`. The bubble plot's lower Y limit
-adapts to the displayed values.
+The dumbbell plot is ordered explicitly by decreasing `S(v)`. The localization heatmap
+uses the complete top-ten shortlist, while the bubble plot labels only the seven
+highest-scoring members to avoid label crowding. Heatmap rows are ordered by decreasing
+g1-only regional share and then by `S(v)`. The bubble plot's lower Y limit adapts to the
+displayed values.
 
 Only the four mutually exclusive g1-containing regions contribute to the heatmap:
 `g1 only`, `(g1 intersect g5) without g6`, `(g1 intersect g6) without g5`, and the

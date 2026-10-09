@@ -19,7 +19,13 @@ python scripts/validate_repository.py
 python scripts/run_analysis.py --approach 1
 ```
 
-Approach 1 is the main analysis. It runs nine biological strata, starting with the combined CD4+ and CD8+ repertoires from thymus and spleen. To run only the combined analysis:
+Approach 1 is the main analysis. It runs nine biological strata, starting with the combined CD4+ and CD8+ repertoires from thymus and spleen. To run the combined analysis together with the pooled CD4+ and pooled CD8+ strata:
+
+```bash
+python scripts/run_analysis.py --approach 1 --strata all_combined,cd4_combined,cd8_combined
+```
+
+To run only the combined analysis:
 
 ```bash
 python scripts/run_analysis.py --approach 1 --strata all_combined

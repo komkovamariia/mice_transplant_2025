@@ -387,8 +387,17 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
             path = root / relative
             if not path.is_file():
                 missing.append(path)
+        if "chain" not in manifest.columns:
+            raise RuntimeError(f"Figure manifest lacks receptor-chain labels for {stratum}.")
+        invalid_chains = sorted(
+            set(manifest["chain"].dropna().astype(str)) - {"TRA", "TRB"}
+        )
+        if invalid_chains:
+            raise RuntimeError(
+                f"Figures without a TRA/TRB assignment for {stratum}: {invalid_chains}"
+            )
         for chain in ("TRA", "TRB"):
-            chain_rows = manifest[manifest.get("chain", "").astype(str).eq(chain)] if "chain" in manifest.columns else pd.DataFrame()
+            chain_rows = manifest[manifest["chain"].astype(str).eq(chain)]
             if chain_rows.empty:
                 raise RuntimeError(
                     f"No {chain} figures were recorded for {stratum}."

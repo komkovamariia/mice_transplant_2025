@@ -134,6 +134,7 @@ def test_injected_counts_reach_real_notebook_exact_sets_and_pooled_inference(tmp
         for g, table in changed.items() for sample in table.columns
     ])
     scope.update({f"ct_{g}_aaV_tra": table for g, table in changed.items()})
+    scope.update({f"raw_ct_{g}_aaV_tra": table for g, table in changed.items()})
     scope.update(metadata=md, POOL_WITHIN_MOUSE=True, RESULT_DIR=tmp_path,
                  combine_count_tables=combine_count_tables, display=lambda *a: None)
     # the cell's scipy/statsmodels imports belong to the next Fisher step

@@ -38,6 +38,13 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert 'globals()[f"raw_ct_{group}_aaV_tra"] for group in ("g1", "g2", "g5", "g6")' in joined
     assert "RAREFACTION_SEEDS" in joined
     assert "BALANCE_SEEDS" in joined
+    assert "RAREFACTION_SEEDS = tuple(range(1201, 1251))" in joined
+    assert "choose_representative_rarefaction_seed" in joined
+    assert "top5_profile_distance_to_median" in joined
+    assert "spike_in_used_for_selection" in joined
+    assert "TRA_g1_top5_only_g1_stability.png" in joined
+    assert "V segments ordered by decreasing structural score S(v)" in joined
+    assert 'plot_df.sort_values(\n            ["100", "score_s", "v"]' in joined
     assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
     assert "top_n_labels=10" in joined
     assert "_adaptive_annotation_color" in joined
@@ -141,6 +148,65 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
     assert selected_genes == ["TRAV-top", "TRAV-middle"]
 
 
+
+
+def test_structural_score_and_only_g1_share_match_article_definitions():
+    notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
+    source = "".join(
+        next(cell for cell in notebook["cells"] if cell["id"] == "venn-inputs")["source"]
+    )
+    tree = ast.parse(source)
+    selected = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {
+            "_feature_v",
+            "_structural_v_summary",
+            "_ranked_structural_candidates",
+        }
+    ]
+    namespace = {
+        "np": __import__("numpy"),
+        "pd": pd,
+        "ast": ast,
+    }
+    exec(
+        compile(ast.Module(body=selected, type_ignores=[]), "structural_summary", "exec"),
+        namespace,
+    )
+
+    features = pd.Index(
+        [
+            ("AAA", "TRAV1"),
+            ("AAB", "TRAV1"),
+            ("AAC", "TRAV1"),
+            ("BBB", "TRAV2"),
+            ("BBC", "TRAV2"),
+        ],
+        tupleize_cols=False,
+    )
+    g1 = pd.DataFrame({"s1": [10, 10, 10, 10, 10]}, index=features)
+    empty = pd.DataFrame({"s": []}, index=pd.Index([], dtype="object"))
+    g5 = pd.DataFrame(
+        {"s5": [4]},
+        index=pd.Index([("AAA", "TRAV1")], tupleize_cols=False),
+    )
+    tables = {
+        "g1": g1,
+        "g2": empty,
+        "g4": empty,
+        "g5": g5,
+        "g6": empty,
+    }
+
+    summary = namespace["_structural_v_summary"](tables).set_index("v")
+    assert summary.loc["TRAV1", "score_s"] == pytest.approx(2 / 5)
+    assert summary.loc["TRAV1", "retention"] == pytest.approx(2 / 3)
+    assert summary.loc["TRAV1", "only_g1_share"] == pytest.approx(2 / 3)
+    assert summary.loc["TRAV2", "score_s"] == pytest.approx(2 / 5)
+    ranked = namespace["_ranked_structural_candidates"](summary.reset_index())
+    assert ranked["v"].tolist()[:2] == ["TRAV1", "TRAV2"]
 
 
 def test_figure_chain_detection_ignores_repository_name_and_routes_trb():

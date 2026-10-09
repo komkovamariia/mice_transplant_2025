@@ -216,7 +216,7 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
     for chain in ("TRA", "TRB"):
         chain_dir = figure_dir / chain
         chain_dir.mkdir(parents=True, exist_ok=True)
-        png = chain_dir / f"{chain}_g1_top10_bubble_genes_heatmap.png"
+        png = chain_dir / f"{chain}_g1_v_segment_localization.png"
         png.write_bytes(b"png")
         manifest_rows.append(
             {

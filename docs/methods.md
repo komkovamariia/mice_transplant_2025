@@ -43,9 +43,9 @@ S(v) = f_full(v) * r(v)
 
 Graphical candidates require `f_full(v) >= 0.006` and `r(v) >= 0.66`. Up to ten are
 selected in descending preservation score `S(v)`, with deterministic tie handling.
-The dumbbell plot is ordered explicitly by decreasing `S(v)`. The localization heatmap
-uses the complete top-ten shortlist, while the bubble plot labels only the seven
-highest-scoring members to avoid label crowding. Heatmap rows are ordered by decreasing
+The dumbbell plot is ordered explicitly by decreasing `S(v)`. The localization heatmap uses the complete threshold-eligible top-ten shortlist, while
+the bubble plot labels the seven highest S(v) values among all displayed V segments to
+avoid label crowding. Heatmap rows are ordered by decreasing
 g1-only regional share and then by `S(v)`. The bubble plot's lower Y limit adapts to the
 displayed values.
 

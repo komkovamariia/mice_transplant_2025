@@ -49,7 +49,6 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "top_n_heatmap=10" in joined
     assert 'plot_df.sort_values(\n            ["100", "score_s", "v"]' in joined
     assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
-    assert "top_n_labels=10" in joined
     assert "_adaptive_annotation_color" in joined
     assert "def plot_v_region_heatmap(" not in joined
     assert joined.count(

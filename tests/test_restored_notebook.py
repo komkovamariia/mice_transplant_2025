@@ -28,6 +28,15 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "plt.savefig = _article_savefig" in joined
     assert "plt.show = _article_show" in joined
     assert "sns.set_theme(style=\"white\"" in joined
+    assert 'DOWNSAMPLE_DEPTH = int(os.environ.get("MICE_TCR_DOWNSAMPLE_UMI", "15000"))' in joined
+    assert 'functionality="f"' in joined
+    assert "by_umi=True" in joined
+    assert "downsample_group_tables(" in joined
+    assert 'globals()[f"raw_ct_{group}_aaV_tra"]' in joined
+    assert 'globals()[f"ct_{group}_aaV_tra"]' in joined
+    assert 'globals()[f"raw_ct_{group}_aaV_tra"] for group in ("g1", "g2", "g5", "g6")' in joined
+    assert "RAREFACTION_SEEDS" in joined
+    assert "BALANCE_SEEDS" in joined
     assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
     assert "top_n_labels=10" in joined
     assert "_adaptive_annotation_color" in joined
@@ -153,14 +162,14 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
     )
     manifest_rows = []
     for chain in ("TRA", "TRB"):
-        png = figure_dir / f"{chain}_g1_top10_bubble_genes_heatmap.png"
-        pdf = png.with_suffix(".pdf")
+        chain_dir = figure_dir / chain
+        chain_dir.mkdir(parents=True, exist_ok=True)
+        png = chain_dir / f"{chain}_g1_top10_bubble_genes_heatmap.png"
         png.write_bytes(b"png")
-        pdf.write_bytes(b"pdf")
         manifest_rows.append(
             {
+                "chain": chain,
                 "png": str(png.relative_to(tmp_path)),
-                "pdf": str(pdf.relative_to(tmp_path)),
             }
         )
     pd.DataFrame(manifest_rows).to_csv(

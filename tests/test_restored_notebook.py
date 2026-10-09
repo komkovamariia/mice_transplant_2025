@@ -66,6 +66,10 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "_boxplot.png" not in joined
     assert "mouse_venn_panel" not in joined
     assert "distinctive_trav_across_eight_strata" not in joined
+    for chain in ("tra", "trb"):
+        for group in ("g1", "g2", "g3", "g4", "g5", "g6"):
+            assert f"set(ct_{group}_aaV_{chain}.index)" in joined
+            assert f"set(ct_{group}_aaV_{chain})" not in joined
     assert "plt.subplots(1, 2" not in joined
     assert "plt.subplots(2, 2" not in joined
     assert "TRA g1: V-segment representation before and after background subtraction" in joined

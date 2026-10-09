@@ -383,10 +383,26 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
             raise RuntimeError(
                 f"Unexpected heatmap output for {stratum}: {sorted(heatmap_names)}"
             )
-        for column in ("png", "pdf"):
-            for relative in manifest[column].dropna().astype(str):
-                if not (root / relative).is_file():
-                    missing.append(root / relative)
+        for relative in manifest["png"].dropna().astype(str):
+            path = root / relative
+            if not path.is_file():
+                missing.append(path)
+        for chain in ("TRA", "TRB"):
+            chain_rows = manifest[manifest.get("chain", "").astype(str).eq(chain)] if "chain" in manifest.columns else pd.DataFrame()
+            if chain_rows.empty:
+                raise RuntimeError(
+                    f"No {chain} figures were recorded for {stratum}."
+                )
+            misplaced = [
+                relative
+                for relative in chain_rows["png"].dropna().astype(str)
+                if chain not in Path(relative).parts
+            ]
+            if misplaced:
+                raise RuntimeError(
+                    f"{chain} figures are outside the {chain} directory for {stratum}: "
+                    + "; ".join(misplaced[:5])
+                )
 
     if missing:
         rendered = "; ".join(str(path.relative_to(root)) for path in missing[:20])

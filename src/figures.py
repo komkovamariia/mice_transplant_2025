@@ -35,6 +35,9 @@ def apply_article_style() -> None:
     )
 
 
+apply_article_style()
+
+
 def figure_dir(
     approach: str,
     stratum: str | None = None,

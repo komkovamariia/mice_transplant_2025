@@ -43,10 +43,10 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "_adaptive_annotation_color" in joined
     assert "def plot_v_region_heatmap(" not in joined
     assert joined.count(
-        'save_path=str(FIGURE_DIR / "TRA_g1_top10_bubble_genes_heatmap.png")'
+        'save_path=str(FIGURE_DIR / "TRA_g1_v_segment_localization.png")'
     ) == 1
     assert joined.count(
-        'save_path=str(FIGURE_DIR / "TRB_g1_top10_bubble_genes_heatmap.png")'
+        'save_path=str(FIGURE_DIR / "TRB_g1_v_segment_localization.png")'
     ) == 1
     assert 'region_order = ["100", "110", "101", "111"]' in joined
     assert "np.log2(len(target_region_order))" in joined

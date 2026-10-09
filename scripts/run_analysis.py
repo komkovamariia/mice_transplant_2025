@@ -353,13 +353,15 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
             result_dir / "distinctive_trav.csv",
             result_dir / "figure_manifest.csv",
         ]
-        if spike_run is None and stratum == "all_combined":
+        representative_seed_strata = {"all_combined", "cd4_combined", "cd8_combined"}
+        if spike_run is None and stratum in representative_seed_strata:
             required.extend(
                 [
                     result_dir / "representative_downsampling_seed.json",
                     result_dir / "tra_rarefaction_seed_summary.csv",
                     result_dir / "tra_rarefaction_v_profiles.csv",
-                    result_dir / "tra_top5_only_g1_by_seed.csv",
+                    result_dir / "tra_top10_only_g1_by_seed.csv",
+                    result_dir / "tra_top10_only_g1_summary.csv",
                 ]
             )
         missing.extend(path for path in required if not path.is_file())
@@ -392,13 +394,13 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
                 f"Missing V-segment localization figure for {stratum}: "
                 f"{sorted(missing_localization)}"
             )
-        if spike_run is None and stratum == "all_combined":
+        if spike_run is None and stratum in representative_seed_strata:
             required_stability = {
                 "TRA_g1_rarefaction_stability.png",
                 "TRB_g1_rarefaction_stability.png",
                 "TRA_g1_balanced_mouse_stability.png",
                 "TRB_g1_balanced_mouse_stability.png",
-                "TRA_g1_top5_only_g1_stability.png",
+                "TRA_g1_top10_only_g1_stability.png",
             }
             missing_stability = required_stability - figure_names
             if missing_stability:

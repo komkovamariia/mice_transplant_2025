@@ -38,15 +38,17 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert 'globals()[f"raw_ct_{group}_aaV_tra"] for group in ("g1", "g2", "g5", "g6")' in joined
     assert "RAREFACTION_SEEDS" in joined
     assert "BALANCE_SEEDS" in joined
-    assert "RAREFACTION_SEEDS = tuple(range(1201, 1251))" in joined
+    assert "RAREFACTION_SEEDS = tuple(range(1201, 1301))" in joined
+    assert 'REPRESENTATIVE_SEED_STRATA = {"all_combined", "cd4_combined", "cd8_combined"}' in joined
     assert "choose_representative_rarefaction_seed" in joined
-    assert "top5_profile_distance_to_median" in joined
+    assert "top10_profile_distance_to_median" in joined
     assert "spike_in_used_for_selection" in joined
-    assert "TRA_g1_top5_only_g1_stability.png" in joined
+    assert "TRA_g1_top10_only_g1_stability.png" in joined
     assert "V segments ordered by decreasing structural score S(v)" in joined
+    assert "top_n_labels=7" in joined
+    assert "top_n_heatmap=10" in joined
     assert 'plot_df.sort_values(\n            ["100", "score_s", "v"]' in joined
     assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
-    assert "top_n_labels=10" in joined
     assert "_adaptive_annotation_color" in joined
     assert "def plot_v_region_heatmap(" not in joined
     assert joined.count(

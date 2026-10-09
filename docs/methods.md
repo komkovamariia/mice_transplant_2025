@@ -13,15 +13,14 @@ It restores the original combined sample scope. The other eight strata are retai
 For the structural branch, MiXCR clonotype exports are first restricted to functional
 rearrangements and interpreted using UMI counts. Each eligible library is independently
 downsampled to 15,000 functional UMI before the exact aaV sets are constructed. Libraries
-below this depth are excluded from the structural calculation. For the primary
-all_combined analysis, 50 independent baseline rarefactions are generated. The five TRAV
-segments most consistently present among the top-five S(v) candidates are used to form a
-five-dimensional g1-only regional-share profile. For each rerun, the mean absolute
-deviation of this profile from the across-rerun median profile is calculated. The rerun
-with the smallest deviation is selected as the representative seed; ties are resolved by
-higher overlap with the consensus top-ten TRAV list and then by lower seed. The main
-structural figures are generated from this representative rerun. Spike-in data are not
-used in seed selection. Exact-set calculations then use the union of the retained
+below this depth are excluded from the structural calculation. For all_combined, cd4_combined and cd8_combined, 100 independent baseline rarefactions
+are generated. The ten TRAV segments most consistently present among the top-ten S(v)
+candidates define a ten-dimensional g1-only regional-share profile. For each rerun, the
+mean absolute deviation of this profile from the across-rerun median profile is
+calculated. The rerun with the smallest deviation is selected as the representative
+seed; ties are resolved by higher overlap with the consensus top-ten TRAV list and then
+by lower seed. The main structural figures are generated from this representative rerun.
+Spike-in data are not used in seed selection. Exact-set calculations then use the union of the retained
 sample-level sets. No clone-level minimum UMI threshold is imposed.
 
 For count-based inference, the same functional clonotypes are retained at their original
@@ -44,10 +43,11 @@ S(v) = f_full(v) * r(v)
 
 Graphical candidates require `f_full(v) >= 0.006` and `r(v) >= 0.66`. Up to ten are
 selected in descending preservation score `S(v)`, with deterministic tie handling.
-The dumbbell plot is ordered by decreasing `S(v)`. Bubble labels and the companion
-heatmap use the same shortlisted genes for each chain, while heatmap rows are ordered by
-decreasing g1-only regional share and then by `S(v)`. The bubble plot's lower Y limit
-adapts to the displayed values.
+The dumbbell plot is ordered explicitly by decreasing `S(v)`. The localization heatmap uses the complete threshold-eligible top-ten shortlist, while
+the bubble plot labels the seven highest S(v) values among all displayed V segments to
+avoid label crowding. Heatmap rows are ordered by decreasing
+g1-only regional share and then by `S(v)`. The bubble plot's lower Y limit adapts to the
+displayed values.
 
 Only the four mutually exclusive g1-containing regions contribute to the heatmap:
 `g1 only`, `(g1 intersect g5) without g6`, `(g1 intersect g6) without g5`, and the
@@ -84,12 +84,14 @@ has a different purpose from `S(v)`, which selects bubble-plot and heatmap genes
 
 ## Robustness checks
 
-The primary combined stratum reports structural robustness checks in addition to the
-ordinary analysis. First, the 15,000-UMI rarefaction is repeated for 50 independent
-seeds. Top-ten overlap is measured against a consensus top-ten list derived from those
-baseline reruns. A separate TRA heatmap shows the g1-only regional share of the consensus
-top-five TRAV segments across all 50 reruns and marks the representative seed. Second,
-structural subtraction is repeated 50 times after balancing the number of mice
+The all_combined, cd4_combined and cd8_combined strata report structural robustness
+checks in addition to the ordinary analysis. First, the 15,000-UMI rarefaction is
+repeated for 100 independent seeds. Top-ten overlap is measured against a consensus
+top-ten list derived from those baseline reruns. A separate TRA heatmap shows the
+g1-only regional share of the consensus top-ten TRAV segments across all 100 reruns,
+marks the representative seed and reports mean, standard deviation, representative-seed
+value and interquartile range for every segment. Second, structural subtraction is
+repeated 50 times after balancing the number of mice
 contributed by g1, g2, g4, g5 and g6 to the smallest group size. This tests whether the
 shortlist is driven by unequal opportunities to observe rare clonotypes in groups with
 different numbers of animals. Both stability analyses use baseline data only and are not

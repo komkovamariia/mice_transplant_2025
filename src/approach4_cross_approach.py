@@ -1,4 +1,4 @@
-"""Direction-aware comparison of V-segment rankings across methods and strata."""
+"""Compare V-segment rankings across the three analysis approaches."""
 
 from __future__ import annotations
 

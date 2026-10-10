@@ -1,4 +1,4 @@
-"""Data loading and biological stratification shared by all analyses."""
+"""Shared repertoire loading and biological stratum selection."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ _CANONICAL_AA = re.compile(r"^[ACDEFGHIKLMNPQRSTVWY]+$")
 
 
 def repository_root() -> Path:
-    """Return the repository root, including during notebook execution."""
+    """Locate the repository root."""
     configured = os.environ.get("MICE_TCR_REPO")
     if configured:
         return Path(configured).expanduser().resolve()
@@ -130,7 +130,7 @@ def _classify(
     fallback: pd.Series,
     patterns: dict[str, str],
 ) -> pd.Series:
-    """Classify from the explicit field first and use the sample name only as fallback."""
+    """Classify from metadata, falling back to the sample name when needed."""
     primary = primary.fillna("").astype(str).str.lower()
     fallback = fallback.fillna("").astype(str).str.lower()
     result = pd.Series(pd.NA, index=primary.index, dtype="object")
@@ -204,7 +204,7 @@ def normalize_repertoire(
     *,
     source_label: str = "repertoire table",
 ) -> pd.DataFrame:
-    """Validate and annotate a sample-resolved aaV repertoire table."""
+    """Validate and annotate a sample-resolved aaV table."""
     missing = sorted(REQUIRED_COLUMNS.difference(df.columns))
     if missing:
         raise ValueError(f"{source_label} is missing required columns: {missing}")
@@ -266,7 +266,7 @@ def normalize_repertoire(
 
 
 def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
-    """Load the later derived sample-resolved aaV Parquet interface."""
+    """Load the derived sample-resolved aaV Parquet table."""
     repertoire_path = Path(path) if path else clean_repertoire_path()
     if not repertoire_path.exists():
         raise FileNotFoundError(
@@ -281,7 +281,7 @@ def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
 
 
 def select_stratum(df: pd.DataFrame, stratum: str) -> pd.DataFrame:
-    """Select one stratum and define its independent analysis unit."""
+    """Select one stratum and assign its analysis unit."""
     if stratum not in STRATA:
         raise ValueError(f"Unknown stratum '{stratum}'. Expected one of {STRATA}.")
 
@@ -339,7 +339,7 @@ def requested_strata() -> tuple[str, ...]:
 
 
 def analysis_metadata(df: pd.DataFrame) -> pd.DataFrame:
-    """Return one metadata row per independent analysis unit."""
+    """Return one metadata row per analysis unit."""
     fields = ["analysis_unit", "mouse_id", "group"]
     metadata = df[fields].drop_duplicates()
     conflicts = metadata.groupby("analysis_unit").agg(

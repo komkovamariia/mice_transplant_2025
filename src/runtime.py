@@ -34,12 +34,12 @@ def cpu_limit() -> int:
             pass
 
     for key in ("SLURM_CPUS_PER_TASK", "SLURM_CPUS_ON_NODE"):
-        n = _positive_int(os.environ.get(key))
-        if n is not None:
-            limits.append(n)
+        limit = _positive_int(os.environ.get(key))
+        if limit is not None:
+            limits.append(limit)
 
     limits.append(max(1, os.cpu_count() or 1))
-    # A Slurm job without a per-task limit falls back to one worker.
+    # a slurm job without a per-task limit falls back to one worker
     if os.environ.get("SLURM_JOB_ID") and not _positive_int(os.environ.get("SLURM_CPUS_PER_TASK")):
         limits.append(1)
     return max(1, min(limits))
@@ -205,64 +205,101 @@ def parallel_map(
 
 
 def permanova_parallel(
-    D, labels, n_perm: int = 9999, seed: int = 0, n_jobs: int | None = None
+    distance_matrix,
+    labels,
+    n_perm: int = 9999,
+    seed: int = 0,
+    n_jobs: int | None = None,
 ):
     """Run one-factor PERMANOVA with a fixed permutation schedule."""
     import numpy as np
 
-    D = np.asarray(D, dtype=np.float64)
+    distance_matrix = np.asarray(distance_matrix, dtype=np.float64)
     labels = np.asarray(labels)
-    if D.ndim != 2 or D.shape[0] != D.shape[1]:
-        raise ValueError("D must be a square distance matrix")
-    if D.shape[0] != labels.shape[0]:
-        raise ValueError("labels length must match D")
+    if (
+        distance_matrix.ndim != 2
+        or distance_matrix.shape[0] != distance_matrix.shape[1]
+    ):
+        raise ValueError("distance_matrix must be square")
+    if distance_matrix.shape[0] != labels.shape[0]:
+        raise ValueError("labels length must match distance_matrix")
 
-    n = len(labels)
-    uniq, codes = np.unique(labels, return_inverse=True)
-    a = len(uniq)
-    if a < 2 or n <= a:
+    sample_count = len(labels)
+    groups, group_codes = np.unique(labels, return_inverse=True)
+    group_count = len(groups)
+    if group_count < 2 or sample_count <= group_count:
         raise ValueError(
             "PERMANOVA requires at least two groups and residual degrees of freedom"
         )
 
-    D2 = D * D
-    upper = np.triu_indices(n, 1)
-    sst = D2[upper].sum() / n
+    squared_distances = distance_matrix * distance_matrix
+    upper_triangle = np.triu_indices(sample_count, 1)
+    total_sum_squares = (
+        squared_distances[upper_triangle].sum() / sample_count
+    )
 
-    def pseudo_f(group_codes) -> float:
-        ssw = 0.0
-        for g in range(a):
-            idx = np.flatnonzero(group_codes == g)
-            if len(idx) < 2:
+    def pseudo_f(codes_for_groups) -> float:
+        within_sum_squares = 0.0
+        for group_index in range(group_count):
+            member_indices = np.flatnonzero(codes_for_groups == group_index)
+            if len(member_indices) < 2:
                 continue
-            sub = D2[np.ix_(idx, idx)]
-            ssw += sub[np.triu_indices(len(idx), 1)].sum() / len(idx)
-        ssb = sst - ssw
-        return (ssb / (a - 1)) / (ssw / (n - a))
+            within_group = squared_distances[
+                np.ix_(member_indices, member_indices)
+            ]
+            upper_group = np.triu_indices(len(member_indices), 1)
+            within_sum_squares += (
+                within_group[upper_group].sum() / len(member_indices)
+            )
 
-    F_obs = pseudo_f(codes)
+        between_sum_squares = total_sum_squares - within_sum_squares
+        return (
+            between_sum_squares / (group_count - 1)
+        ) / (
+            within_sum_squares / (sample_count - group_count)
+        )
+
+    observed_f = pseudo_f(group_codes)
     if n_perm <= 0:
-        return F_obs, 1.0
+        return observed_f, 1.0
 
-    # Generate permutations before dispatch so worker count cannot change the RNG stream.
-    rng = np.random.default_rng(seed)
-    perm_codes = np.empty((n_perm, n), dtype=np.int16 if a < 32768 else np.int32)
-    for i in range(n_perm):
-        perm_codes[i] = rng.permutation(codes)
+    # generate permutations before dispatch so worker count cannot change the rng stream
+    random_generator = np.random.default_rng(seed)
+    permutation_codes = np.empty(
+        (n_perm, sample_count),
+        dtype=np.int16 if group_count < 32768 else np.int32,
+    )
+    for permutation_index in range(n_perm):
+        permutation_codes[permutation_index] = random_generator.permutation(
+            group_codes
+        )
 
-    n_workers = _resolve_jobs(n_jobs, n_perm)
-    n_batches = min(n_perm, max(n_workers * 4, 1))
-    batches = [b for b in np.array_split(perm_codes, n_batches) if len(b)]
+    workers = _resolve_jobs(n_jobs, n_perm)
+    batch_count = min(n_perm, max(workers * 4, 1))
+    batches = [
+        batch
+        for batch in np.array_split(permutation_codes, batch_count)
+        if len(batch)
+    ]
 
-    def eval_batch(batch) -> int:
-        return sum(pseudo_f(row) >= F_obs for row in batch)
+    def evaluate_batch(batch) -> int:
+        return sum(pseudo_f(row) >= observed_f for row in batch)
 
-    if n_workers == 1:
-        exceed = sum(eval_batch(batch) for batch in batches)
+    if workers == 1:
+        exceedances = sum(evaluate_batch(batch) for batch in batches)
     else:
         from joblib import Parallel, delayed, parallel_config
 
-        with parallel_config(backend="loky", n_jobs=n_workers, inner_max_num_threads=1):
-            exceed = sum(Parallel()(delayed(eval_batch)(batch) for batch in batches))
+        with parallel_config(
+            backend="loky",
+            n_jobs=workers,
+            inner_max_num_threads=1,
+        ):
+            exceedances = sum(
+                Parallel()(
+                    delayed(evaluate_batch)(batch)
+                    for batch in batches
+                )
+            )
 
-    return F_obs, (exceed + 1) / (n_perm + 1)
+    return observed_f, (exceedances + 1) / (n_perm + 1)

@@ -1,4 +1,4 @@
-"""Verified CSV and MiXCR input route for the count-based first approach."""
+"""Load the metadata, clonoset index and MiXCR tables used by Approach 1."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def _resolve_clonoset_file(value, index_path: Path) -> Path:
 
 
 def prepare_sample_index(metadata_path: Path, index_path: Path) -> pd.DataFrame:
-    """Reproduce the sample-ID merge used by the original first-pass notebook."""
+    """Build the sample table used by the original Approach 1 notebook."""
     if not metadata_path.is_file():
         raise FileNotFoundError(f"Metadata CSV not found: {metadata_path}")
     if not index_path.is_file():
@@ -89,8 +89,8 @@ def prepare_sample_index(metadata_path: Path, index_path: Path) -> pd.DataFrame:
             f"{metadata_path} is missing metadata columns: {missing_metadata}"
         )
     metadata = metadata.copy()
-    # the historical index keys use the metadata prefixes verbatim, for example
-    # alpha-100 and beta-100. Chain standardization belongs after this merge
+    # The clonoset index uses keys such as alpha-100 and beta-100.
+    # Normalize chain names only after this join.
     metadata["sample_id_old"] = (
         metadata["chain"].astype(str).str.strip()
         + "-"
@@ -151,7 +151,7 @@ def count_table_to_repertoire(
     count_table: pd.DataFrame,
     sample_index: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Convert a repseq aaV count table to the shared sample-resolved interface."""
+    """Convert a repseq aaV matrix to the sample-resolved table format."""
     features = [tuple(feature) for feature in count_table.index]
     invalid_features = [feature for feature in features if len(feature) != 2]
     if invalid_features:
@@ -207,7 +207,7 @@ def load_first_pass_repertoire(
     metadata_csv: str | Path | None = None,
     clonoset_index: str | Path | None = None,
 ) -> pd.DataFrame:
-    """Load Approach 1 directly from the verified CSV and MiXCR data route."""
+    """Load Approach 1 from metadata, the clonoset index and MiXCR exports."""
     try:
         from repseq import intersections
     except ImportError as error:

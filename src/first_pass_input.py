@@ -89,8 +89,8 @@ def prepare_sample_index(metadata_path: Path, index_path: Path) -> pd.DataFrame:
             f"{metadata_path} is missing metadata columns: {missing_metadata}"
         )
     metadata = metadata.copy()
-    # The clonoset index uses keys such as alpha-100 and beta-100.
-    # Normalize chain names only after this join.
+    # the clonoset index uses keys such as alpha-100 and beta-100
+    # normalize chain names only after this join
     metadata["sample_id_old"] = (
         metadata["chain"].astype(str).str.strip()
         + "-"

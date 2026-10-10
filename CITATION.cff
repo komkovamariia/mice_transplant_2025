@@ -3,16 +3,22 @@ message: "Please cite this repository and the exact commit used for your analysi
 type: software
 title: "Reproducible analysis of mouse T-cell receptor repertoires after transplantation"
 authors:
-  - name: "Komkova M."
   - name: "Andreev V."
+  - name: "Komkova M."
+  - name: "Nikitina O."
+  - name: "Kireev B."
   - name: "Chernov P."
+  - name: "Vasilichin V."
+  - name: "Menshikov K."
+  - name: "Gongadze I."
+  - name: "Dmitriev N."
+  - name: "Mitin A."
   - name: "Kofiadi I."
+  - name: "Khaitov M."
 repository-code: "https://github.com/komkovamariia/mice_transplant_2025"
 url: "https://github.com/komkovamariia/mice_transplant_2025"
-abstract: "Reproducible exact-clonotype, V-segment retention, differential-abundance and count-matrix spike-in analyses of mouse TRA and TRB repertoires after transplantation."
+abstract: "Reproducible exact-clonotype, V-segment retention, differential-abundance and count-matrix spike-in analyses of mouse TRA repertoire after transplantation."
 keywords:
   - T-cell receptor
   - immune repertoire
   - transplantation
-  - spike-in sensitivity
-  - reproducible research

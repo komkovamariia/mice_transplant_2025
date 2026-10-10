@@ -1,135 +1,111 @@
 # Spike-in sensitivity protocol
 
-The experiment asks whether the primary analysis recovers an introduced TRA signal
-in the combined CD4 + CD8, thymus + spleen stratum. It is a computational sensitivity
-experiment on observed count matrices. It does not establish biological alloreactivity
-or an assay-wide limit of detection.
+The spike-in experiment measures how an added TRA family moves through the Approach 1 pipeline in the `all_combined` stratum. It is a computational sensitivity test on observed count matrices. It is not an assay-wide limit of detection and does not assign antigen specificity or biological alloreactivity.
 
-## Baseline and target selection
+## Baseline and target family
 
-The runner first executes the complete `venn_original.ipynb` on the unmodified combined
-stratum. It freezes the six group matrices for each chain, checksums their files and
-records sample metadata identity. It selects the family only after baseline retention,
-Fisher, edgeR and TRAV rankings are available.
+The runner first executes the unmodified combined baseline. TRA and TRB group matrices are saved with checksums and sample metadata.
 
-A target V segment must fail the baseline graphical candidate rule of both
-`frequency_in_full_g1 >= 0.006` and `retained_cdr3_share >= 0.66`. Segments with positive
-baseline edgeR or Fisher enrichment in the existing final ranking are also excluded.
-This definition distinguishes a candidate from a descriptive entry in the ranking.
+A target V segment must be outside the baseline graphical candidate set defined by:
 
-Eligible family members:
+```text
+frequency_in_full_g1 >= 0.006
+retained_cdr3_share >= 0.66
+```
 
-1. Are exact `(CDR3 amino-acid sequence, V segment)` keys already observed in the input matrices.
-2. Share the selected exact TRAV annotation. This does not imply common antigen specificity.
-3. Are absent from the union of the subtraction groups g2, g4, g5 and g6.
-4. Have baseline UMI frequency at most `1e-5` in every g1 sample, including absence.
+Segments already supported by positive baseline edgeR or Fisher evidence in the final ranking are excluded.
 
-The default selects ten family members, preferentially those absent from g1. Observed
-g3 clonotypes can supply g1-absent, control-absent keys. The seed is 1031. Both the
-chosen TRAV and exact family are fixed before any perturbed analysis and reused for
-all doses. No targets are selected by their eventual recovery performance.
+Eligible family members must:
 
-If no valid family is available, the experiment stops after preserving the baseline
-and explains which explicit options can be revised. It never fabricates new sequences
-or silently substitutes a currently enriched TRAV.
+1. be observed exact `(CDR3 amino-acid sequence, V segment)` keys;
+2. share the selected TRAV annotation;
+3. be absent from g2, g4, g5 and g6;
+4. have baseline UMI frequency at most `1e-5` in every g1 sample.
 
-## Dose definition and allocation
+The default family size is 10. Selection prefers clonotypes absent from g1, so observed g3 clonotypes can supply g1-absent, control-absent keys. The default seed is 1031. The selected TRAV and aaV keys are fixed before any dose is run.
 
-Let `L_s` be the original TRA UMI library size of g1 sample `s`, `f` the requested
-family fraction, and `K` the number of selected aaV clonotypes. The added family budget is
+If no family meets the requested criteria, the experiment stops after the baseline. It does not create synthetic sequences or swap in a different enriched TRAV.
+
+## Dose definition
+
+For g1 sample `s`, let `L_s` be the original TRA UMI library size, `f` the requested family fraction and `K` the family size.
 
 ```text
 B_s = floor(f * L_s + 0.5)
 ```
 
-`B_s` is split as evenly as integer counts permit across the fixed ordered family.
-Any remainder is assigned deterministically. A sample's final library is `L_s + B_s`.
-The recorded dose includes both `B_s / L_s` and `B_s / (L_s + B_s)`.
+`B_s` is the total number of added family UMI for that sample. Counts are split as evenly as possible across the ordered family; the integer remainder is assigned deterministically.
 
-The three default fractions are 0.0001, 0.001 and 0.01: 0.01%, 0.1% and 1%. These are
-**total family doses**, not doses per clonotype. Every dose starts from the same
-baseline. Original UMI counts remain in place and added counts increase the raw
-functional UMI library size. The structural branch then applies the same fixed
-15,000-UMI rarefaction used by the standard analysis. Library eligibility is frozen
-from the unperturbed baseline, so a spike-in cannot make a previously low-depth
-library enter the structural analysis. edgeR and Fisher retain the perturbed raw
-functional integer UMI counts rather than the rarefied matrices.
+The recorded dose includes both:
 
-At low depth, a requested dose may round to zero or supply fewer UMI than family
-members. Such aaV remain absent until they actually receive a positive count. The
-experiment does not force a minimum of one UMI per selected clonotype.
+```text
+B_s / L_s
+B_s / (L_s + B_s)
+```
 
-All g1 sample libraries receive the same requested fraction, before their counts are
-pooled within mouse. The control matrices and all TRB matrices are unchanged. Standard
-TMM normalization, expression filtering and edgeR inference are rerun for each dose.
+The sequential CLI defaults to `0.0001,0.001,0.01`, which correspond to 0.01%, 0.1% and 1% of the original g1 TRA library. These are family-level doses, not per-clonotype doses.
 
-## Reuse of the primary analysis
+Each dose starts from the same baseline. Original counts remain in place. At very small fractions, rounding can produce zero added UMI or fewer added UMI than selected clonotypes.
 
-A baseline plus each dose executes the same full source notebook, including its
-TRA/TRB figures, retention tables, Fisher analysis, edgeR and final TRAV aggregation.
-Both branches originate from the same perturbed functional UMI matrices, but they use
-them differently. Exact-set analysis independently rarefies each baseline-eligible
-library to 15,000 UMI before presence and absence sets are constructed. Differential
-inference keeps raw integer UMI counts, uses the union of g1, g2, g5 and g6 matrices
-and then pools samples within mouse. g2 is excluded from the g1 versus g5+g6 edgeR
-contrast.
+All g1 libraries receive the same requested fraction. Control groups and TRB matrices are unchanged.
 
-Snapshots are loaded for both chains in perturbed runs. Matrix checksums and metadata
-identity are verified before reuse. `selection.json`, `experiment.json`, source hashes,
-Python package versions and `R_sessionInfo.txt` make the experiment auditable.
+## Structural and differential branches
 
-## Hypotheses and measurements
+The perturbed functional UMI matrices feed both branches of the same source notebook.
 
-| Question | Recorded measurements |
+Structural analysis keeps the baseline library-eligibility set and rarefies each eligible library to 15,000 UMI before exact-set construction. A spike-in therefore cannot make a previously low-depth library enter the structural analysis.
+
+Fisher and edgeR use the perturbed raw integer UMI counts. For the g1 versus g5+g6 differential analysis, samples are pooled within mouse after the perturbation. g2 remains outside that contrast.
+
+Every dose reruns the same retention, Fisher, edgeR, ranking and figure code as the baseline.
+
+## Recorded measurements
+
+| Question | Output |
 |---|---|
-| Are selected aaV retained in the g1 remainder? | Presence, remainder membership and recovery fraction for every selected key |
-| Does the TRAV remainder increase? | Unique aaV before/after subtraction, absolute remainder change and retention change |
-| Does its share in g1 increase? | Unique-aaV share and UMI share, each with its own baseline difference |
-| Does edgeR recover the signal? | Tested/filtered status, logFC, FDR and count with logFC > 0 and FDR < 0.05 |
-| Does the TRAV rise in the final ranking? | Rank, rank improvement, entry from an unranked baseline and unchanged article score |
+| Are the selected aaV recovered in the g1 remainder? | Presence, remainder membership and recovery fraction per aaV |
+| Does the selected TRAV retain more unique aaV? | Remainder count and retention change |
+| Does its g1 share increase? | Unique-aaV share and UMI share, with baseline differences |
+| Does edgeR recover the added family? | Tested status, logFC, FDR and number with logFC > 0 and FDR < 0.05 |
+| Does the TRAV move in the final ranking? | Rank, rank improvement and entry from an unranked baseline |
 
-The article score is recomputed as `S(v) = f_full(v) * r(v)`. The final evidence
-ranking retains the existing notebook aggregation; neither score is tuned for the
-spike-in. A baseline-unranked TRAV has a missing rank, not an invented numeric rank.
-Entry into the ranking is reported separately from a numeric rank change.
+The structural article score is recomputed as:
 
-A failed hypothesis is a result, so it does not stop the experiment. Technical failure
-such as a missing figure or unfitted edgeR model does stop it. A selected aaV that
-fails expression filtering is distinguished from one tested with nonsignificant FDR.
+```text
+S(v) = f_full(v) * r(v)
+```
 
-## Sensitivity bounds and interpretation
+The final evidence ranking is the existing Approach 1 ranking and is not tuned for the perturbation.
 
-`spike_in_summary.csv` contains one baseline row and one row per dose.
-`sensitivity_bounds.json` reports the lowest passing tested dose, the largest failing
-dose below it, and every observed pass/fail transition for:
+A selected clonotype can be absent from the edgeR test after expression filtering. That case is recorded separately from a tested clonotype with nonsignificant FDR.
+
+## Sensitivity summary
+
+`spike_in_summary.csv` contains the baseline and one row per dose.
+
+`sensitivity_bounds.json` records the lowest tested passing fraction, the largest tested failure below the first pass and all observed transitions for:
 
 - recovery of all selected aaV in the g1 remainder;
-- positive, FDR-significant edgeR recovery of any selected aaV;
-- positive, FDR-significant edgeR recovery of all selected aaV.
+- positive FDR-significant edgeR recovery of any selected aaV;
+- positive FDR-significant edgeR recovery of all selected aaV.
 
-If every tested dose passes, the lower transition is below the tested range. If none
-passes, a passing threshold is not established. The highest dose tested is not an
-upper sensitivity limit. An upper failure is recorded only when a higher dose loses
-recovery after a lower passing dose. A nonmonotone response is retained in the output.
+These values describe the tested grid. If no dose passes, no passing threshold is reported. If all doses pass, the lower transition lies below the tested range. A higher-dose failure after a lower-dose pass is recorded as a nonmonotone response.
 
-Increasing UMI for an aaV already present in g1 does not increase its unique-aaV count.
-Exact-set retention and the article score may therefore plateau even while UMI share
-and edgeR evidence increase. A high baseline retention can also leave no room for an
-increase. FDR and final rank depend on dispersion, replicate counts, competing genes
-and TMM normalization; the hypotheses are not guaranteed by construction.
+Unique-aaV metrics can plateau once all selected aaV are present, even when their UMI counts continue to increase. edgeR and the final rank also depend on filtering, dispersion, replicate structure, competing features and TMM normalization.
 
-This experiment uses one family and uniform within-sample dosing. Results describe
-that configuration. Other families, heterogeneous mouse prevalence and repeated
-simulation designs require explicit additional experiments.
+The experiment currently uses one fixed family and uniform within-sample dosing. Other families or heterogeneous prevalence patterns need separate runs.
 
-## Outputs and reruns
+## Outputs
 
-Independent doses can run as a bounded Slurm array after baseline completion; see
-[Aldan-3 parallel execution](aldan3_parallel.md). The scheduler default expands the
-grid to sixteen fractions from `1e-7` to `0.01` (0.00001% to 1%). The sequential CLI
-retains its three-dose default. Scheduling does not change any selection or test rule.
+A run writes:
 
-Use the commands and file map in [RUN_GUIDE.md](../RUN_GUIDE.md). Each run uses a fresh
-identifier under `results/01_spike_in/`, `figures/01_spike_in/`, `audit_runs/spike_in/`
-and `logs/spike_in/`. Standard article results under `01_set_count` are preserved.
-The source matrices remain in the baseline directory and are never overwritten by a dose.
+```text
+results/01_spike_in/<run_id>/
+figures/01_spike_in/<run_id>/
+audit_runs/spike_in/<run_id>/
+logs/spike_in/<run_id>/
+```
+
+The baseline directory contains the matrix snapshots and selection files. Each dose directory contains `spike_dose_by_sample.csv`, `spike_clonotype_recovery.csv` and `spike_metrics.json`. The run root contains `spike_in_summary.csv`, `sensitivity_bounds.json` and the final conclusion file.
+
+For Slurm execution, see [aldan3_parallel.md](aldan3_parallel.md). The scheduler default uses 16 fractions from `1e-7` to `0.01`, corresponding to 0.00001% through 1%. Scheduling changes how cases are launched, not how they are analyzed.

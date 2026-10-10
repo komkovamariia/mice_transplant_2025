@@ -39,7 +39,7 @@ def validate_counts(table: pd.DataFrame) -> pd.DataFrame:
     if not np.isfinite(values).all() or (values < 0).any() or (values != np.floor(values)).any():
         raise ValueError("Spike-in requires finite, non-negative integer UMI counts.")
     out = out.astype(np.int64)
-    # Exact-set analysis treats any retained row as present.
+    # exact-set analysis treats any retained row as present
     return out.loc[out.sum(axis=1).gt(0)]
 
 
@@ -105,7 +105,9 @@ def select_targets(
     libraries = g1.sum(axis=0)
     if g1.empty or libraries.le(0).any():
         raise ValueError("Every g1 sample needs a nonzero baseline UMI library.")
-    forbidden = set().union(*(set(checked[g].index) for g in SUBTRACTION_GROUPS))
+    forbidden = set().union(
+        *(set(checked[group].index) for group in SUBTRACTION_GROUPS)
+    )
     observed = set().union(*(set(table.index) for table in checked.values()))
     frequencies = g1.div(libraries, axis=1).max(axis=1)
 
@@ -139,14 +141,17 @@ def select_targets(
     rng = np.random.default_rng(seed)
     chosen_gene = v_gene or str(rng.choice(sorted(enough)))
     candidates = enough[chosen_gene]
-    # Prefer g1-absent clonotypes so the spike can change exact-set retention.
+    # prefer g1-absent clonotypes so the spike can change exact-set retention
     absent = [key for key in candidates if key not in g1.index]
     rare = [key for key in candidates if key in g1.index]
     selected = []
     for pool in (absent, rare):
         if pool:
             order = rng.permutation(len(pool))
-            selected.extend(pool[i] for i in order[:n_clones - len(selected)])
+            selected.extend(
+                pool[position]
+                for position in order[: n_clones - len(selected)]
+            )
         if len(selected) == n_clones:
             break
     return {
@@ -175,7 +180,9 @@ def apply_spike_to_tables(tables: dict, selection: dict, fraction: float):
         raise ValueError("Select at least one unique aaV clonotype.")
     if any(key[1] != selection["v_gene"] for key in keys):
         raise ValueError("Every selected aaV must use the selected TRAV.")
-    controls = set().union(*(set(result[g].index) for g in SUBTRACTION_GROUPS))
+    controls = set().union(
+        *(set(result[group].index) for group in SUBTRACTION_GROUPS)
+    )
     if set(keys) & controls:
         raise ValueError("Selected aaV occur in a subtraction control.")
     g1 = result["g1"]
@@ -260,7 +267,9 @@ def write_case_metrics(directory, selection, fraction, g1, remaining, retention,
 
 def write_baseline_metrics(directory: Path, selection: dict):
     tables = load_snapshot_tables(directory, "TRA")
-    controls = set().union(*(set(tables[g].index) for g in SUBTRACTION_GROUPS))
+    controls = set().union(
+        *(set(tables[group].index) for group in SUBTRACTION_GROUPS)
+    )
     return write_case_metrics(
         directory, selection, 0.0, tables["g1"], set(tables["g1"].index) - controls,
         pd.read_csv(directory / "tra_v_retention.csv"),
@@ -280,9 +289,14 @@ def sensitivity_summary(frame: pd.DataFrame) -> dict:
         first = float(successes[0]) if len(successes) else None
         below = fractions[(fractions < first) & ~values] if first is not None else []
         transitions = [
-            {"from_fraction": float(fractions[i - 1]), "to_fraction": float(fractions[i]),
-             "from_pass": bool(values[i - 1]), "to_pass": bool(values[i])}
-            for i in range(1, len(values)) if values[i] != values[i - 1]
+            {
+                "from_fraction": float(fractions[position - 1]),
+                "to_fraction": float(fractions[position]),
+                "from_pass": bool(values[position - 1]),
+                "to_pass": bool(values[position]),
+            }
+            for position in range(1, len(values))
+            if values[position] != values[position - 1]
         ]
         observations.append({
             "criterion": metric, "lowest_tested_passing_fraction": first,
@@ -290,7 +304,10 @@ def sensitivity_summary(frame: pd.DataFrame) -> dict:
             "all_tested_doses_pass": bool(values.all()) if len(values) else False,
             "no_tested_dose_passes": not bool(values.any()),
             "observed_transitions": transitions,
-            "upper_failure_observed": any(t["from_pass"] and not t["to_pass"] for t in transitions),
+            "upper_failure_observed": any(
+                transition["from_pass"] and not transition["to_pass"]
+                for transition in transitions
+            ),
         })
     return {
         "tested_fractions": doses["fraction"].tolist(), "criteria": observations,
@@ -328,8 +345,11 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
     apply_article_style()
     output = figure_root / "TRA"
     output.mkdir(parents=True, exist_ok=True)
-    x = np.arange(len(frame))
-    labels = ["baseline" if f == 0 else f"{100 * f:g}%" for f in frame["fraction"]]
+    dose_positions = np.arange(len(frame))
+    dose_labels = [
+        "baseline" if fraction == 0 else f"{100 * fraction:g}%"
+        for fraction in frame["fraction"]
+    ]
     tick_positions = np.arange(0, len(frame), 2)
     if tick_positions[-1] != len(frame) - 1:
         tick_positions = np.append(tick_positions, len(frame) - 1)
@@ -371,14 +391,26 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
 
     for column, title, ylabel, filename, pass_column, invert_y in panels:
         fig, ax = plt.subplots(figsize=(7.2, 4.8))
-        ax.plot(x, frame[column], marker="o", markersize=4.5, linewidth=1.7, color=CORAL)
+        ax.plot(
+            dose_positions,
+            frame[column],
+            marker="o",
+            markersize=4.5,
+            linewidth=1.7,
+            color=CORAL,
+        )
         if pass_column is not None:
             passing = frame.index[frame[pass_column].fillna(False)]
             if len(passing):
                 first = int(passing[0])
                 ax.axvline(first, color=PURPLE, linestyle=":", linewidth=1.2)
                 ax.scatter([first], [frame.loc[first, column]], s=70, color=PURPLE, zorder=4)
-        ax.set_xticks(tick_positions, [labels[i] for i in tick_positions], rotation=45, ha="right")
+        ax.set_xticks(
+            tick_positions,
+            [dose_labels[position] for position in tick_positions],
+            rotation=45,
+            ha="right",
+        )
         ax.set_xlabel("Added family UMI relative to the original g1 UMI library")
         ax.set_ylabel(ylabel)
         ax.set_title(f"TRA g1: {title}")

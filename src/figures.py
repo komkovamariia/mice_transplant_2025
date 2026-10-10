@@ -1,4 +1,4 @@
-"""Publication figure helpers used across the repertoire analyses."""
+"""Shared figure paths and styling."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def save_figure(
     close: bool = True,
     dpi: int = 300,
 ) -> Path:
-    """Save one publication PNG in the analysis figure directory."""
+    """Save a PNG in the analysis figure directory."""
     apply_article_style()
     output = figure_dir(approach, stratum, chain)
     png_path = output / f"{slugify(name)}.png"
@@ -101,7 +101,7 @@ def save_figure(
 
 
 def write_figure_inventory() -> Path:
-    """Write one inventory row for every persisted PNG figure."""
+    """Write the current PNG inventory."""
     root = repository_root()
     figure_root = root / "figures"
     output = root / "results" / "figure_inventory.csv"

@@ -1,8 +1,4 @@
-"""Count-matrix spike-in experiments with frozen targets and explicit recovery metrics.
-
-The primary notebook supplies all biological analysis, Fisher tests, edgeR fits,
-and final TRAV rankings. This module only perturbs counts and measures recovery.
-"""
+"""Add fixed TRA spike-ins to count matrices and summarize recovery."""
 
 from __future__ import annotations
 
@@ -43,12 +39,12 @@ def validate_counts(table: pd.DataFrame) -> pd.DataFrame:
     if not np.isfinite(values).all() or (values < 0).any() or (values != np.floor(values)).any():
         raise ValueError("Spike-in requires finite, non-negative integer UMI counts.")
     out = out.astype(np.int64)
-    # historical exact-set operations use the index as the presence set
+    # exact-set analysis treats any retained row as present
     return out.loc[out.sum(axis=1).gt(0)]
 
 
 def combine_count_tables(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Outer-union aaV rows; each biological sample retains its own column."""
+    """Join count matrices by aaV while keeping sample columns separate."""
     checked = [validate_counts(table) for table in tables.values()]
     columns = [column for table in checked for column in table.columns]
     if len(columns) != len(set(columns)):
@@ -101,12 +97,7 @@ def select_targets(
     max_g1_fraction: float = 1e-5,
     seed: int = 1031,
 ) -> dict:
-    """Choose observed, control-absent aaV from a baseline noncandidate TRAV.
-
-    Related means the same exact V-segment annotation; no shared specificity or
-    CDR3 sequence similarity is inferred. Rare means the maximum within-sample
-    UMI frequency across g1 does not exceed max_g1_fraction.
-    """
+    """Select observed, control-absent aaV from a baseline noncandidate TRAV."""
     if n_clones < 1 or not np.isfinite(max_g1_fraction) or not 0 <= max_g1_fraction < 1:
         raise ValueError("Use n_clones >= 1 and a finite rarity fraction in [0, 1).")
     checked = {group: validate_counts(table) for group, table in tables.items()}
@@ -114,7 +105,9 @@ def select_targets(
     libraries = g1.sum(axis=0)
     if g1.empty or libraries.le(0).any():
         raise ValueError("Every g1 sample needs a nonzero baseline UMI library.")
-    forbidden = set().union(*(set(checked[g].index) for g in SUBTRACTION_GROUPS))
+    forbidden = set().union(
+        *(set(checked[group].index) for group in SUBTRACTION_GROUPS)
+    )
     observed = set().union(*(set(table.index) for table in checked.values()))
     frequencies = g1.div(libraries, axis=1).max(axis=1)
 
@@ -148,14 +141,17 @@ def select_targets(
     rng = np.random.default_rng(seed)
     chosen_gene = v_gene or str(rng.choice(sorted(enough)))
     candidates = enough[chosen_gene]
-    # prefer absent-in-g1 aaV because their insertion can change exact-set retention
+    # prefer g1-absent clonotypes so the spike can change exact-set retention
     absent = [key for key in candidates if key not in g1.index]
     rare = [key for key in candidates if key in g1.index]
     selected = []
     for pool in (absent, rare):
         if pool:
             order = rng.permutation(len(pool))
-            selected.extend(pool[i] for i in order[:n_clones - len(selected)])
+            selected.extend(
+                pool[position]
+                for position in order[: n_clones - len(selected)]
+            )
         if len(selected) == n_clones:
             break
     return {
@@ -184,7 +180,9 @@ def apply_spike_to_tables(tables: dict, selection: dict, fraction: float):
         raise ValueError("Select at least one unique aaV clonotype.")
     if any(key[1] != selection["v_gene"] for key in keys):
         raise ValueError("Every selected aaV must use the selected TRAV.")
-    controls = set().union(*(set(result[g].index) for g in SUBTRACTION_GROUPS))
+    controls = set().union(
+        *(set(result[group].index) for group in SUBTRACTION_GROUPS)
+    )
     if set(keys) & controls:
         raise ValueError("Selected aaV occur in a subtraction control.")
     g1 = result["g1"]
@@ -224,7 +222,8 @@ def measure_case(selection, fraction, g1, remaining, retention, edger, ranking):
     gene = selection["v_gene"]
     vrow = retention.loc[retention["v"].eq(gene)]
     rrow = ranking.loc[ranking["v_gene"].eq(gene)]
-    get_v = lambda column: float(vrow.iloc[0][column]) if len(vrow) else 0.0
+    def retention_value(column):
+        return float(vrow.iloc[0][column]) if len(vrow) else 0.0
     gene_umi = float(g1.loc[[key for key in g1.index if key[1] == gene]].to_numpy().sum())
     metrics = {
         "fraction": fraction, "v_gene": gene, "n_selected": len(keys),
@@ -234,16 +233,19 @@ def measure_case(selection, fraction, g1, remaining, retention, edger, ranking):
         "n_edger_tested_selected": len(tested),
         "n_edger_positive_fdr_selected": len(positive),
         "edger_positive_recovery_fraction": len(positive) / len(keys),
-        "v_unique_g1": int(get_v("cdr3_in_full_g1")),
-        "v_remaining_g1": int(get_v("cdr3_remaining_in_g1")),
-        "v_retention": get_v("retained_cdr3_share"),
-        "v_unique_share_g1": get_v("frequency_in_full_g1"),
+        "v_unique_g1": int(retention_value("cdr3_in_full_g1")),
+        "v_remaining_g1": int(retention_value("cdr3_remaining_in_g1")),
+        "v_retention": retention_value("retained_cdr3_share"),
+        "v_unique_share_g1": retention_value("frequency_in_full_g1"),
         "v_umi_share_g1": gene_umi / float(g1.to_numpy().sum()),
-        "v_article_score": get_v("frequency_in_full_g1") * get_v("retained_cdr3_share"),
+        "v_article_score": retention_value("frequency_in_full_g1") * retention_value("retained_cdr3_share"),
         "v_final_rank": int(rrow.iloc[0]["stratum_rank"]) if len(rrow) else None,
     }
     rows = []
-    lookup = {key: row for key, (_, row) in zip(tested["aaV"], tested.iterrows())}
+    lookup = {
+        aa_v: row
+        for aa_v, (_, row) in zip(tested["aaV"], tested.iterrows())
+    }
     for key in keys:
         row = lookup.get(key)
         rows.append({
@@ -265,7 +267,9 @@ def write_case_metrics(directory, selection, fraction, g1, remaining, retention,
 
 def write_baseline_metrics(directory: Path, selection: dict):
     tables = load_snapshot_tables(directory, "TRA")
-    controls = set().union(*(set(tables[g].index) for g in SUBTRACTION_GROUPS))
+    controls = set().union(
+        *(set(tables[group].index) for group in SUBTRACTION_GROUPS)
+    )
     return write_case_metrics(
         directory, selection, 0.0, tables["g1"], set(tables["g1"].index) - controls,
         pd.read_csv(directory / "tra_v_retention.csv"),
@@ -275,7 +279,7 @@ def write_baseline_metrics(directory: Path, selection: dict):
 
 
 def sensitivity_summary(frame: pd.DataFrame) -> dict:
-    """Report observed transitions; never label the highest dose an upper limit."""
+    """Summarize pass/fail transitions across the tested dose grid."""
     doses = frame.loc[frame["fraction"].gt(0)].sort_values("fraction")
     observations = []
     for metric in ("all_selected_in_remainder", "any_edger_positive_fdr", "all_edger_positive_fdr"):
@@ -285,9 +289,14 @@ def sensitivity_summary(frame: pd.DataFrame) -> dict:
         first = float(successes[0]) if len(successes) else None
         below = fractions[(fractions < first) & ~values] if first is not None else []
         transitions = [
-            {"from_fraction": float(fractions[i - 1]), "to_fraction": float(fractions[i]),
-             "from_pass": bool(values[i - 1]), "to_pass": bool(values[i])}
-            for i in range(1, len(values)) if values[i] != values[i - 1]
+            {
+                "from_fraction": float(fractions[position - 1]),
+                "to_fraction": float(fractions[position]),
+                "from_pass": bool(values[position - 1]),
+                "to_pass": bool(values[position]),
+            }
+            for position in range(1, len(values))
+            if values[position] != values[position - 1]
         ]
         observations.append({
             "criterion": metric, "lowest_tested_passing_fraction": first,
@@ -295,7 +304,10 @@ def sensitivity_summary(frame: pd.DataFrame) -> dict:
             "all_tested_doses_pass": bool(values.all()) if len(values) else False,
             "no_tested_dose_passes": not bool(values.any()),
             "observed_transitions": transitions,
-            "upper_failure_observed": any(t["from_pass"] and not t["to_pass"] for t in transitions),
+            "upper_failure_observed": any(
+                transition["from_pass"] and not transition["to_pass"]
+                for transition in transitions
+            ),
         })
     return {
         "tested_fractions": doses["fraction"].tolist(), "criteria": observations,
@@ -333,8 +345,11 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
     apply_article_style()
     output = figure_root / "TRA"
     output.mkdir(parents=True, exist_ok=True)
-    x = np.arange(len(frame))
-    labels = ["baseline" if f == 0 else f"{100 * f:g}%" for f in frame["fraction"]]
+    dose_positions = np.arange(len(frame))
+    dose_labels = [
+        "baseline" if fraction == 0 else f"{100 * fraction:g}%"
+        for fraction in frame["fraction"]
+    ]
     tick_positions = np.arange(0, len(frame), 2)
     if tick_positions[-1] != len(frame) - 1:
         tick_positions = np.append(tick_positions, len(frame) - 1)
@@ -376,14 +391,26 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
 
     for column, title, ylabel, filename, pass_column, invert_y in panels:
         fig, ax = plt.subplots(figsize=(7.2, 4.8))
-        ax.plot(x, frame[column], marker="o", markersize=4.5, linewidth=1.7, color=CORAL)
+        ax.plot(
+            dose_positions,
+            frame[column],
+            marker="o",
+            markersize=4.5,
+            linewidth=1.7,
+            color=CORAL,
+        )
         if pass_column is not None:
             passing = frame.index[frame[pass_column].fillna(False)]
             if len(passing):
                 first = int(passing[0])
                 ax.axvline(first, color=PURPLE, linestyle=":", linewidth=1.2)
                 ax.scatter([first], [frame.loc[first, column]], s=70, color=PURPLE, zorder=4)
-        ax.set_xticks(tick_positions, [labels[i] for i in tick_positions], rotation=45, ha="right")
+        ax.set_xticks(
+            tick_positions,
+            [dose_labels[position] for position in tick_positions],
+            rotation=45,
+            ha="right",
+        )
         ax.set_xlabel("Added family UMI relative to the original g1 UMI library")
         ax.set_ylabel(ylabel)
         ax.set_title(f"TRA g1: {title}")
@@ -394,12 +421,24 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
         fig.savefig(output / filename, dpi=300, bbox_inches="tight")
         plt.close(fig)
 
-    report = ["# Spike-in sensitivity experiment", "",
-        f"Selected V segment: {frame.iloc[0]['v_gene']}. Family size: {int(frame.iloc[0]['n_selected'])} aaV.",
-        "", bounds["interpretation"], "",
-        "The CSV reports each hypothesis separately. A failed biological hypothesis is a valid result.",
-        "Exact-set metrics count unique aaV. Their response can plateau as soon as all selected aaV are present.",
-        "See spike_in_summary.csv, sensitivity_bounds.json and each case's spike_clonotype_recovery.csv.", ""]
+    report = [
+        "# Spike-in sensitivity experiment",
+        "",
+        (
+            f"Selected V segment: {frame.iloc[0]['v_gene']}. "
+            f"Family size: {int(frame.iloc[0]['n_selected'])} aaV."
+        ),
+        "",
+        bounds["interpretation"],
+        "",
+        "The CSV reports each hypothesis separately.",
+        "Exact-set metrics count unique aaV and can plateau after full recovery.",
+        (
+            "See spike_in_summary.csv, sensitivity_bounds.json and each case's "
+            "spike_clonotype_recovery.csv."
+        ),
+        "",
+    ]
     (result_root / "conclusion.md").write_text("\n".join(report))
     return frame
 

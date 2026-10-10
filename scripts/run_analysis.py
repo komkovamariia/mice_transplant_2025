@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute the restored notebook workflow with durable cell-level logging."""
+"""Run analysis notebooks with per-cell logging and checkpoints."""
 
 from __future__ import annotations
 
@@ -288,7 +288,7 @@ def _base_environment(arguments) -> dict[str, str]:
 
 
 def prepare_first_approach_output_directories(selected_strata: list[str]) -> None:
-    """Remove stale generated figures and tables before Approach 1 execution."""
+    """Clear generated outputs for the selected Approach 1 strata."""
     root = repo_root()
     figure_root = root / "figures" / "01_set_count"
     result_root = root / "results" / "01_set_count"
@@ -311,7 +311,7 @@ def prepare_first_approach_output_directories(selected_strata: list[str]) -> Non
 
 
 def archive_first_approach_figures() -> Path:
-    """Create one ZIP containing the complete figures/01_set_count directory."""
+    """Archive the current Approach 1 figure directory."""
     root = repo_root()
     figure_root = root / "figures" / "01_set_count"
     if not figure_root.is_dir():
@@ -336,7 +336,7 @@ def archive_first_approach_figures() -> Path:
 
 
 def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None, spike_case=None) -> None:
-    """Fail immediately when an executed notebook, table, or displayed figure is absent."""
+    """Check the required outputs for completed Approach 1 strata."""
     root = repo_root()
     missing = []
     for stratum in selected_strata:
@@ -458,7 +458,7 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
 
 
 def analysis_fingerprint(root: Path) -> str:
-    """Reject mixed source versions across independently scheduled cases."""
+    """Hash source files used by staged spike-in cases."""
     paths = [root / "venn_original.ipynb", root / "environment.yml"]
     paths += sorted((root / "src").glob("*.py"))
     paths += sorted((root / "scripts").glob("*.py"))
@@ -470,7 +470,7 @@ def analysis_fingerprint(root: Path) -> str:
 
 
 def run_spike_experiment(arguments, base_environment, logger) -> None:
-    """Run sequentially or execute one isolated stage of a Slurm dependency graph."""
+    """Run a spike-in experiment or one staged Slurm step."""
     root = repo_root()
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
@@ -490,7 +490,10 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         raise ValueError("Staged execution requires --spike-run-id.")
     import math
     fractions = sorted(set(float(value) for value in arguments.spike_fractions.split(",")))
-    if not fractions or any(not math.isfinite(f) or not 0 < f < 1 for f in fractions):
+    if not fractions or any(
+        not math.isfinite(fraction) or not 0 < fraction < 1
+        for fraction in fractions
+    ):
         raise ValueError("Spike-in fractions must be finite numbers strictly between 0 and 1.")
     if arguments.spike_clones < 1 or not 0 <= arguments.spike_max_g1_fraction < 1:
         raise ValueError("Use a positive family size and a rarity fraction in [0, 1).")
@@ -520,7 +523,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         raise ValueError("Source, input paths or spike-in settings differ from the baseline.")
 
     def claim(case):
-        # exclusive creation prevents duplicate array submissions from overwriting a case
+        # exclusive creation keeps duplicate array workers from sharing a case directory
         with (result_root / f"{case}.started.json").open("x") as handle:
             json.dump({"slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                        "started_at": datetime.now().isoformat()}, handle)
@@ -537,7 +540,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         marker = json.loads((result_root / "baseline.complete.json").read_text())
         digest = hashlib.sha256((result_root / "selection.json").read_bytes()).hexdigest()
         if marker["selection_sha256"] != digest:
-            raise ValueError("The frozen spike-in selection changed after baseline completion.")
+            raise ValueError("The fixed spike-in selection changed after baseline completion.")
         return digest
 
     def execute_case(case, fraction):
@@ -563,7 +566,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         complete("baseline", selection_sha256=hashlib.sha256(
             (result_root / "selection.json").read_bytes()).hexdigest())
         if stage == "baseline":
-            logger.write("SPIKE-IN BASELINE COMPLETE | frozen selection ready for independent doses")
+            logger.write("SPIKE-IN BASELINE COMPLETE | selection ready for independent doses")
             return
 
     selection_digest = require_baseline()
@@ -576,7 +579,10 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         require_baseline()
         complete(case, selection_sha256=selection_digest)
         return
-    cases = ["baseline"] + [f"dose_{i:02d}" for i in range(1, len(fractions) + 1)]
+    cases = ["baseline"] + [
+        f"dose_{dose_index:02d}"
+        for dose_index in range(1, len(fractions) + 1)
+    ]
     if stage == "all":
         for case, fraction in zip(cases[1:], fractions):
             execute_case(case, fraction)
@@ -601,10 +607,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=(
-            "Run the restored notebook-first analysis, selected later approaches, "
-            "or the complete publication workflow."
-        )
+        description="Run the repertoire analyses and spike-in experiment."
     )
     parser.add_argument(
         "--approach",
@@ -614,7 +617,7 @@ def main() -> int:
     parser.add_argument(
         "--strata",
         default="all",
-        help="all or comma-separated canonical biological strata.",
+        help="all or comma-separated biological strata.",
     )
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--metadata-csv", type=Path)
@@ -634,7 +637,7 @@ def main() -> int:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Replay the checkpointed notebook state and continue with durable logs.",
+        help="Replay the checkpointed notebook state and continue logging.",
     )
     arguments = parser.parse_args()
     if arguments.mode != "spike-in" and arguments.spike_stage != "all":

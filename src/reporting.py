@@ -1,4 +1,4 @@
-"""Utilities for concise, result-specific stratum conclusions."""
+"""Write short result summaries for each stratum."""
 
 from __future__ import annotations
 
@@ -21,8 +21,9 @@ def save_conclusion(
     payload: dict,
     paragraphs: list[str],
 ) -> dict:
-    """Write the machine-readable result and its publication-oriented interpretation."""
-    interpretation = " ".join(part.strip() for part in paragraphs if part.strip())
+    interpretation = " ".join(
+        paragraph.strip() for paragraph in paragraphs if paragraph.strip()
+    )
     result = dict(payload)
     result["interpretation"] = interpretation
 

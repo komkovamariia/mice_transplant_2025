@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the restored notebook-first repository contract."""
+"""Check repository structure, notebook source and required outputs."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def fail(message: str) -> None:
 
 def _active_files():
     try:
-        completed = subprocess.run(
+        tracked_files = subprocess.run(
             ["git", "-C", str(ROOT), "ls-files", "-z"],
             check=True,
             capture_output=True,
@@ -92,7 +92,7 @@ def _active_files():
     else:
         candidates = (
             ROOT / relative
-            for relative in completed.stdout.decode("utf-8").split("\0")
+            for relative in tracked_files.stdout.decode("utf-8").split("\0")
             if relative
         )
 
@@ -196,7 +196,7 @@ def _validate_primary_notebook() -> None:
     code_cells = [cell for cell in cells if cell.get("cell_type") == "code"]
     if len(cells) < 40 or len(code_cells) < 30:
         fail(
-            "venn_original.ipynb is missing substantial historical analysis content "
+            "venn_original.ipynb has fewer cells than the expected source notebook "
             f"(cells={len(cells)}, code_cells={len(code_cells)})"
         )
 
@@ -227,14 +227,14 @@ def _validate_primary_notebook() -> None:
     )
     missing = [token for token in required_tokens if token not in joined]
     if missing:
-        fail(f"venn_original.ipynb lacks restored analysis token(s): {missing}")
+        fail(f"venn_original.ipynb lacks required analysis token(s): {missing}")
     if re.search(r"deseq", joined, re.IGNORECASE):
         fail(
-            "an excluded differential-expression implementation remains "
+            "an excluded differential-expression implementation is still present "
             "in venn_original.ipynb"
         )
     if joined.count("plt.show(") < 10:
-        fail("venn_original.ipynb is missing the retained article figure set")
+        fail("venn_original.ipynb is missing required figure calls")
     required_figure_scope = (
         'region_order = ["100", "110", "101", "111"]',
         "np.log2(len(target_region_order))",
@@ -244,7 +244,7 @@ def _validate_primary_notebook() -> None:
     )
     missing_scope = [token for token in required_figure_scope if token not in joined]
     if missing_scope:
-        fail(f"venn_original.ipynb lacks article figure contract: {missing_scope}")
+        fail(f"venn_original.ipynb lacks required figure code: {missing_scope}")
     forbidden_figure_scope = (
         "impact_score",
         "specific_score",
@@ -257,7 +257,7 @@ def _validate_primary_notebook() -> None:
     )
     remaining_scope = [token for token in forbidden_figure_scope if token in joined]
     if remaining_scope:
-        fail(f"venn_original.ipynb retains excluded figure scope: {remaining_scope}")
+        fail(f"venn_original.ipynb contains excluded figure code: {remaining_scope}")
     if (
         "plt.savefig = _article_savefig" not in joined
         or "plt.show = _article_show" not in joined
@@ -339,7 +339,8 @@ def _validate_runner_and_documentation() -> None:
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     guide = (ROOT / "RUN_GUIDE.md").read_text(encoding="utf-8")
-    for token in (
+
+    readme_tokens = (
         "venn_original.ipynb",
         "--approach 1",
         "--approach 2",
@@ -347,15 +348,21 @@ def _validate_runner_and_documentation() -> None:
         "--approach 4",
         "--approach all",
         "--strata",
+        "Parquet",
+    )
+    for token in readme_tokens:
+        if token not in readme:
+            fail(f"README.md is missing required token: {token}")
+
+    guide_tokens = (
+        *readme_tokens,
         "--resume",
         "audit_runs/01_cd4_thymus.executed.ipynb",
         "logs/01_cd4_thymus.log",
-        "Parquet",
-    ):
-        if token not in readme or token not in guide:
-            fail(
-                f"README.md or RUN_GUIDE.md is missing command/output token: {token}"
-            )
+    )
+    for token in guide_tokens:
+        if token not in guide:
+            fail(f"RUN_GUIDE.md is missing required token: {token}")
 
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for token in ("audit_runs/", "logs/", ".ipynb_checkpoints/"):

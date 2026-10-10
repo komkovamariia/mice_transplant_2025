@@ -28,7 +28,7 @@ def test_resolve_sequence_rejects_unknown_values():
         resolve_sequence("5")
 
 
-def test_resolve_strata_preserves_the_prespecified_eight_run_order():
+def test_resolve_strata_preserves_the_nine_stratum_order():
     expected = [key for _, key in STRATUM_RUNS]
     assert resolve_strata("all") == expected
     assert resolve_strata("cd4_thymus,thymus_combined") == [
@@ -86,7 +86,6 @@ def test_prepare_and_archive_first_approach_outputs(tmp_path, monkeypatch):
         assert archive.namelist() == ["01_set_count/cd8_thymus/retained.png"]
 
 
-
 def test_publication_figure_output_is_png_only_and_chain_specific(tmp_path, monkeypatch):
     monkeypatch.setattr("src.figures.repository_root", lambda: tmp_path)
     fig, ax = plt.subplots(figsize=(4, 3))
@@ -101,6 +100,14 @@ def test_publication_figure_output_is_png_only_and_chain_specific(tmp_path, monk
         chain="TRA",
     )
 
-    assert path == tmp_path / "figures" / "01_set_count" / "all_combined" / "TRA" / "test_figure.png"
+    expected = (
+        tmp_path
+        / "figures"
+        / "01_set_count"
+        / "all_combined"
+        / "TRA"
+        / "test_figure.png"
+    )
+    assert path == expected
     assert path.is_file()
     assert not path.with_suffix(".pdf").exists()

@@ -1,21 +1,10 @@
 # Running the analysis
 
-For the combined baseline and sixteen spike-in doses from 0.00001% to 1%, use the
-[Aldan-3 parallel run guide](docs/aldan3_parallel.md). It supports a 24-CPU baseline,
-then three independent 8-CPU dose notebooks, with explicit memory reservations,
-Slurm dependencies and one final summary/ZIP writer. Preparation does not submit jobs.
-
-## Update an existing HPC checkout
+## Update an HPC checkout
 
 ```bash
 cd ~/mice_transplant_env_test
 git status --short
-```
-
-Commit or back up any local source changes before switching branches. Generated output
-folders are ignored by Git. Once the working tree is ready:
-
-```bash
 git switch main
 git pull --ff-only origin main
 conda env update -n mice-transplant-2025 -f environment.yml --prune
@@ -23,41 +12,51 @@ conda activate mice-transplant-2025
 python scripts/validate_repository.py
 ```
 
-If validation reports a legacy `approaches/` directory, inspect it and move it outside
-the checkout under a new backup name. Old untracked files can survive a Git update.
-Do not restore an older source notebook over the current `venn_original.ipynb`.
+Commit or move local source changes before switching branches. Generated outputs are ignored by Git, so old untracked files can remain after a pull.
 
-## Default and selected analyses
+## Approach 1
+
+Run all nine strata:
 
 ```bash
-# Default: Approach 1, all nine strata, combined analysis first.
-python scripts/run_analysis.py
 python scripts/run_analysis.py --approach 1
-
-# Only CD4 + CD8, thymus + spleen.
-python scripts/run_analysis.py --approach 1 --strata all_combined
-
-# One of the original compartments, or a specified sequence.
-python scripts/run_analysis.py --approach 1 --strata cd4_thymus
-python scripts/run_analysis.py --approach 1 --strata all_combined,cd4_combined,cd8_combined
 ```
 
-The keys are `all_combined`, `cd4_thymus`, `cd8_thymus`, `cd4_spleen`, `cd8_spleen`,
-`cd4_combined`, `cd8_combined`, `thymus_combined` and `spleen_combined`.
+Run selected strata:
 
-CD4 + CD8 denotes the union of these sampled subsets. The `all_combined` analysis
-contains CD4+ and CD8+ libraries from both thymus and spleen. The structural branch
-retains functional rearrangements and downsamples each eligible library to 15,000 UMI
-before exact-set construction. Libraries below 15,000 functional UMI are omitted from
-that structural calculation. In all_combined, cd4_combined and cd8_combined, 100
-baseline rarefactions are compared and the seed closest to the median consensus top-10
-TRAV g1-only profile is used for the main structural figures. This seed selection never
-uses spike-in data. Count-based inference
-keeps functional raw UMI counts;
-counts for repeated samples from one mouse are summed before edgeR. Each distinct
-treatment-group/mouse pair remains an independent analysis unit.
+```bash
+python scripts/run_analysis.py --approach 1 --strata all_combined
+
+python scripts/run_analysis.py --approach 1 \
+  --strata all_combined,cd4_combined,cd8_combined
+```
+
+Available keys:
+
+```text
+all_combined
+cd4_thymus
+cd8_thymus
+cd4_spleen
+cd8_spleen
+cd4_combined
+cd8_combined
+thymus_combined
+spleen_combined
+```
+
+The structural branch uses functional clonotypes and a 15,000-UMI library depth. Libraries below that depth are left out of structural set calculations. The representative structural seed for `all_combined`, `cd4_combined` and `cd8_combined` is chosen from 100 baseline rarefactions. Count-based inference keeps functional raw UMI counts and pools repeated samples within treatment group and mouse. The exact model and score definitions are in [docs/methods.md](docs/methods.md).
 
 ## Input paths
+
+Default Approach 1 inputs:
+
+```text
+/projects/mice_transplant_2025/metadata_mice_transplant.csv
+/projects/mice_transplant_2025/test_run/clonosets_mice_transplant_2025_df.csv
+```
+
+Override them on the command line:
 
 ```bash
 python scripts/run_analysis.py --approach 1 --strata all_combined \
@@ -66,83 +65,83 @@ python scripts/run_analysis.py --approach 1 --strata all_combined \
   --working-dir /projects/mice_transplant_2025/test_run
 ```
 
-Metadata require `chain`, `sample_no`, `sample_id`, `group_no`, `mouse_no`, `source`
-and `subtype`. The clonoset index requires `sample_id`, `filename` and `chain`.
-Historical `alpha-N`/`beta-N` keys are matched before chain names are normalized.
-All referenced MiXCR exports must be accessible on the analysis host.
+The metadata table must contain `chain`, `sample_no`, `sample_id`, `group_no`, `mouse_no`, `source` and `subtype`. The clonoset index must contain `sample_id`, `filename` and `chain`. Approach 1 reads the MiXCR exports referenced by the index and does not require the derived Parquet table.
 
-Approach 1 does not read Parquet. See [config/example.env](config/example.env) for
-persistent path overrides and [input provenance](docs/notebook_input_provenance.md)
-for the distinction between source data and derived inputs.
+See [config/example.env](config/example.env) for environment-variable overrides and [docs/notebook_input_provenance.md](docs/notebook_input_provenance.md) for the input map.
 
-## Progress, outputs and interruptions
+## Logs, resume and output checks
+
+Follow a running notebook with:
 
 ```bash
 tail -f logs/00_all_combined.log
 tail -f logs/01_cd4_thymus.log
 ```
 
-The logs report cell number, total cells, elapsed time and remaining cells. The combined
-notebook is `audit_runs/00_all_combined.executed.ipynb`; the original CD4 thymus file is
-`audit_runs/01_cd4_thymus.executed.ipynb`. Both retain completed cell outputs after failure.
+To rerun after interruption:
 
 ```bash
 python scripts/run_analysis.py --approach 1 --strata all_combined --resume
 ```
 
-`--resume` replays execution from the first cell in a new kernel. It preserves progress
-visibility; it does not restore Python or R objects in memory. A standard run clears
-old generated figures and tables for its selected strata. Copy outputs elsewhere first
-if they need to be retained for comparison.
+Resume starts a new kernel and replays cells from the beginning. Existing checkpoint outputs are kept for inspection, but Python and R objects are rebuilt.
 
-After successful execution, inspect `results/01_set_count/<stratum>/run_summary.json`,
-`trav_ranking.csv`, `tra_v_retention.csv`, `tra_analysis_units.csv`,
-`tra_structural_depth_audit.csv`, `trb_structural_depth_audit.csv`, `provenance.json`
-and `R_sessionInfo.txt`. For `all_combined`, `cd4_combined` and `cd8_combined`,
-also inspect
-`representative_downsampling_seed.json`, `tra_rarefaction_seed_summary.csv`,
-`tra_top10_only_g1_by_seed.csv`, `tra_top10_only_g1_summary.csv`,
-`tra_rarefaction_top10_stability.csv`,
-`trb_rarefaction_top10_stability.csv`, `tra_balanced_mouse_top10_stability.csv`
-and `trb_balanced_mouse_top10_stability.csv`.
-`edger_status` must read:
+A successful Approach 1 stratum contains at least:
+
+```text
+results/01_set_count/<stratum>/run_summary.json
+results/01_set_count/<stratum>/trav_ranking.csv
+results/01_set_count/<stratum>/distinctive_trav.csv
+results/01_set_count/<stratum>/tra_v_retention.csv
+results/01_set_count/<stratum>/figure_manifest.csv
+```
+
+The representative-seed strata also write:
+
+```text
+representative_downsampling_seed.json
+tra_rarefaction_seed_summary.csv
+tra_rarefaction_v_profiles.csv
+tra_top10_only_g1_by_seed.csv
+tra_top10_only_g1_summary.csv
+tra_rarefaction_top10_stability.csv
+trb_rarefaction_top10_stability.csv
+tra_balanced_mouse_top10_stability.csv
+trb_balanced_mouse_top10_stability.csv
+```
+
+`run_summary.json` should contain:
 
 ```text
 edgeR quasi-likelihood model fitted successfully.
 ```
 
-Each figure listed in `figure_manifest.csv` must exist as PNG. TRA and TRB figures are
-stored separately under `figures/01_set_count/<stratum>/TRA/` and
-`figures/01_set_count/<stratum>/TRB/`. Each stratum has the two approved heatmaps,
-`TRA_g1_v_segment_localization.png` and
-`TRB_g1_v_segment_localization.png`. These show at most ten threshold-eligible
-V segments. The dumbbell plot is ordered by decreasing structural score S(v); the
-localization heatmap uses the same shortlisted V segments but orders rows by decreasing
-g1-only regional share. These three representative-seed strata also contain
-`TRA_g1_top10_only_g1_stability.png`. This horizontal boxplot summarizes the 100
-baseline rarefactions for each consensus TRAV segment; the box shows the interquartile
-range and median, while the mean and representative-seed value are overlaid.
-Composite manuscript panels are intentionally not generated by the runner.
+Figures are stored under `figures/01_set_count/<stratum>/TRA/` and `TRB/`. The main V-segment files include:
 
-A complete nine-stratum run creates
-`results/01_set_count/all_strata_distinctive_trav_summary.csv`.
-Every successful Approach 1 invocation creates `figures/01_set_count.zip` from the
-whole current figure folder. After a partial rerun, that ZIP also includes previously
-generated figures for untouched strata. Run all nine strata together for a fresh,
-consistent complete archive.
+```text
+TRA_g1_v_segment_representation.png
+TRA_g1_v_segment_retention.png
+TRA_g1_v_segment_localization.png
+TRB_g1_v_segment_representation.png
+TRB_g1_v_segment_retention.png
+TRB_g1_v_segment_localization.png
+```
+
+For the representative-seed strata, the stability outputs also include `TRA_g1_rarefaction_stability.png`, `TRB_g1_rarefaction_stability.png`, `TRA_g1_balanced_mouse_stability.png`, `TRB_g1_balanced_mouse_stability.png` and `TRA_g1_top10_only_g1_stability.png`.
+
+A complete nine-stratum run writes `results/01_set_count/all_strata_distinctive_trav_summary.csv` and refreshes `figures/01_set_count.zip`.
 
 ## Spike-in experiment
+
+Sequential run:
 
 ```bash
 python scripts/run_analysis.py --mode spike-in --spike-run-id sensitivity_01
 ```
 
-The default family has ten observed aaV clonotypes sharing a noncandidate TRAV.
-The family receives 0.01%, 0.1% and 1% added UMI in each original g1 sample library.
-The runner creates a fresh baseline and three full executed copies of the primary
-notebook, all for `all_combined`. Controls and ordinary analysis outputs are preserved.
+The sequential default uses fractions `0.0001,0.001,0.01`, corresponding to 0.01%, 0.1% and 1% of the original g1 TRA UMI library.
 
-Custom family and dose grid:
+Custom grid:
 
 ```bash
 python scripts/run_analysis.py --mode spike-in \
@@ -152,58 +151,62 @@ python scripts/run_analysis.py --mode spike-in \
   --spike-seed 1031
 ```
 
-An exact TRAV can be requested with `--spike-v-gene TRAV9-2`; this is an example,
-not a claim that this segment is eligible in the study. Selection verifies eligibility.
-`--spike-max-g1-fraction` defaults to `0.00001`, the maximum baseline frequency allowed
-in any g1 sample. The runner never relaxes this threshold or invents sequences to
-complete a family. If selection fails, inspect the baseline and explicitly choose a
-smaller family or revised threshold.
+An exact V segment can be requested with `--spike-v-gene`. Selection still checks the baseline eligibility rules. Use a new run ID for a new experiment.
 
-Results are under `results/01_spike_in/<run_id>/`:
+Results are written under `results/01_spike_in/<run_id>/`; executed notebooks and logs use `audit_runs/spike_in/<run_id>/` and `logs/spike_in/<run_id>/`. The protocol and output definitions are in [docs/spike_in.md](docs/spike_in.md).
 
-- `experiment.json` records the requested configuration.
-- `selection.json` records the fixed TRAV, exact aaV keys and selection criteria.
-- `baseline/count_snapshots/` contains hashed original TRA/TRB matrices.
-- `baseline/` and `dose_01/`, `dose_02/`, ... contain full notebook outputs.
-- Each dose has `spike_dose_by_sample.csv`, `spike_clonotype_recovery.csv` and `spike_metrics.json`.
-- `spike_in_summary.csv` compares all hypotheses with baseline.
-- `sensitivity_bounds.json` records observed pass/fail transitions.
+## Aldan-3 spike-in jobs
 
-Executed notebooks and logs use `audit_runs/spike_in/<run_id>/` and
-`logs/spike_in/<run_id>/`. Figures use `figures/01_spike_in/<run_id>/` and a separate ZIP.
-Use a fresh run identifier to rerun the experiment. `--resume` is supported for ordinary
-runs only. See [the spike-in protocol](docs/spike_in.md) before interpreting limits.
+For the bounded 24-CPU Slurm setup, use [docs/aldan3_parallel.md](docs/aldan3_parallel.md). Preparation writes the plan and shell scripts only. Submission is a separate command.
+
+```bash
+python scripts/slurm_spike.py diagnose
+
+python scripts/slurm_spike.py prepare \
+  --run-id combined_24cpu_01 \
+  --cpu-budget 24 \
+  --baseline-cpus 24 \
+  --cpus 8 \
+  --max-parallel 3 \
+  --mem 64G \
+  --partition short \
+  --time 02:00:00
+```
+
+Use the Aldan-3 guide before submitting the baseline or dose array.
 
 ## Direct notebook execution
 
-Open `venn_original.ipynb` in the configured environment and run all cells from a fresh
-kernel. Its direct default is `all_combined`. To execute a compartment via nbconvert:
+`venn_original.ipynb` defaults to `all_combined`. A compartment can also be executed directly with nbconvert:
 
 ```bash
 mkdir -p audit_runs
 MICE_TCR_STRATUM=cd4_thymus jupyter nbconvert \
   --to notebook --execute venn_original.ipynb \
   --ExecutePreprocessor.timeout=-1 \
-  --output-dir audit_runs --output 01_cd4_thymus.executed.ipynb
+  --output-dir audit_runs \
+  --output 01_cd4_thymus.executed.ipynb
 ```
 
-The runner additionally manages cell logs, output replacement, the complete summary and
-ZIP creation. Use the runner for the standard article output contract and spike-in mode.
+The runner is preferred for normal analysis because it also handles logs, checkpoints, output verification and figure archives.
 
-## Additional approaches and validation
+## Approaches 2 to 4
 
 ```bash
 python scripts/run_analysis.py --approach 2 --data-dir /absolute/path/to/derived_data
 python scripts/run_analysis.py --approach 3 --data-dir /absolute/path/to/derived_data
 python scripts/run_analysis.py --approach 4
 python scripts/run_analysis.py --approach all --data-dir /absolute/path/to/derived_data
+```
 
+Approaches 2 and 3 use `clean_clonotypes_aaV.parquet`. Approach 4 reads their standardized ranking tables together with Approach 1 outputs.
+
+CPU allocation outside the spike-in scheduler is described in [docs/parallel_execution.md](docs/parallel_execution.md).
+
+## Validation
+
+```bash
 python scripts/validate_repository.py
 python -m compileall -q src scripts
 python -m pytest -q
 ```
-
-Approaches 2 and 3 consume an existing `clean_clonotypes_aaV.parquet`; Approach 4 reads
-all upstream ranking tables. A fresh-start materialization command for that Parquet
-interface has not yet been verified. Resource allocation is described in
-[parallel execution](docs/parallel_execution.md).

@@ -540,7 +540,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         marker = json.loads((result_root / "baseline.complete.json").read_text())
         digest = hashlib.sha256((result_root / "selection.json").read_bytes()).hexdigest()
         if marker["selection_sha256"] != digest:
-            raise ValueError("The frozen spike-in selection changed after baseline completion.")
+            raise ValueError("The fixed spike-in selection changed after baseline completion.")
         return digest
 
     def execute_case(case, fraction):
@@ -566,7 +566,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         complete("baseline", selection_sha256=hashlib.sha256(
             (result_root / "selection.json").read_bytes()).hexdigest())
         if stage == "baseline":
-            logger.write("SPIKE-IN BASELINE COMPLETE | frozen selection ready for independent doses")
+            logger.write("SPIKE-IN BASELINE COMPLETE | selection ready for independent doses")
             return
 
     selection_digest = require_baseline()
@@ -607,10 +607,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=(
-            "Run the restored notebook-first analysis, selected later approaches, "
-            "or the complete publication workflow."
-        )
+        description="Run the repertoire analyses and spike-in experiment."
     )
     parser.add_argument(
         "--approach",
@@ -620,7 +617,7 @@ def main() -> int:
     parser.add_argument(
         "--strata",
         default="all",
-        help="all or comma-separated canonical biological strata.",
+        help="all or comma-separated biological strata.",
     )
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--metadata-csv", type=Path)
@@ -640,7 +637,7 @@ def main() -> int:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Replay the checkpointed notebook state and continue with durable logs.",
+        help="Replay the checkpointed notebook state and continue logging.",
     )
     arguments = parser.parse_args()
     if arguments.mode != "spike-in" and arguments.spike_stage != "all":

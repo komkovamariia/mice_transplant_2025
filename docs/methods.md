@@ -87,10 +87,11 @@ has a different purpose from `S(v)`, which selects bubble-plot and heatmap genes
 The all_combined, cd4_combined and cd8_combined strata report structural robustness
 checks in addition to the ordinary analysis. First, the 15,000-UMI rarefaction is
 repeated for 100 independent seeds. Top-ten overlap is measured against a consensus
-top-ten list derived from those baseline reruns. A separate TRA heatmap shows the
-g1-only regional share of the consensus top-ten TRAV segments across all 100 reruns,
-marks the representative seed and reports mean, standard deviation, representative-seed
-value and interquartile range for every segment. Second, structural subtraction is
+top-ten list derived from those baseline reruns and displayed as the frequency
+distribution of the number of consensus segments recovered. A separate TRA boxplot
+summarizes the g1-only regional share of the consensus top-ten TRAV segments across all
+100 reruns; boxes show the interquartile range and median, while the mean and the
+representative-seed value are overlaid explicitly. Second, structural subtraction is
 repeated 50 times after balancing the number of mice
 contributed by g1, g2, g4, g5 and g6 to the smallest group size. This tests whether the
 shortlist is driven by unequal opportunities to observe rare clonotypes in groups with

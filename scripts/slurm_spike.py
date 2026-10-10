@@ -62,7 +62,7 @@ def validate_resources(args: argparse.Namespace) -> None:
         raise ValueError("Baseline CPUs or concurrent dose CPUs exceed --cpu-budget.")
 
     if not re.fullmatch(r"[1-9][0-9]*[MGT]", args.mem):
-        raise ValueError("Use an explicit positive memory reservation, e.g. --mem 64G.")
+        raise ValueError("Use a positive memory reservation, e.g. --mem 64G.")
 
     for value in (args.partition, args.constraint, args.account):
         if value is not None and not re.fullmatch(r"[A-Za-z0-9_.-]+", value):

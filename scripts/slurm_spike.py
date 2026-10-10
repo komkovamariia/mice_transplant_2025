@@ -328,7 +328,7 @@ def worker(path: Path, stage: str) -> None:
     if cpus < 1:
         raise RuntimeError("Missing SLURM_CPUS_PER_TASK.")
 
-    # Thread limits must be set before numerical libraries or kernels start.
+    # set thread limits before numerical libraries or kernels start
     os.environ.update(thread_environment(cpus))
     plan = load_plan(path)
 

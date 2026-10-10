@@ -45,6 +45,9 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "spike_in_used_for_selection" in joined
     assert "TRA_g1_top10_only_g1_stability.png" in joined
     assert "V segments ordered by decreasing structural score S(v)" in joined
+    assert 'profile["score_s"] = (' in joined
+    assert 'profile["retention_score"] = profile["score_s"]' in joined
+    assert '["score_s", full_freq_col, "retained_cdr3_share_pct", "v"]' in joined
     assert "top_n_labels=7" in joined
     assert "top_n_heatmap=10" in joined
     assert 'plot_df.sort_values(\n            ["100", "score_s", "v"]' in joined
@@ -134,13 +137,14 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
 
     assert set(region_summary["region_id"]) == {"100", "110", "101", "111"}
     assert profile.loc[0, "region_entropy"] == pytest.approx(1.0)
+    assert profile.loc[0, "score_s"] == pytest.approx(0.15)
     assert profile.loc[0, "retention_score"] == pytest.approx(0.15)
     assert profile.loc[0, "loss_score"] == pytest.approx(0.05)
 
     candidates = pd.DataFrame(
         {
             "v": ["TRAV-low-share", "TRAV-middle", "TRAV-top"],
-            "retention_score": [0.99, 0.20, 0.30],
+            "score_s": [0.99, 0.20, 0.30],
             "retained_cdr3_share_pct": [100.0, 70.0, 80.0],
             "cdr3_in_full_g1": [10, 10, 10],
             "frequency_in_full_g1_pct": [0.5, 1.0, 2.0],
@@ -150,6 +154,25 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
     assert selected_genes == ["TRAV-top", "TRAV-middle"]
 
 
+
+
+def test_rarefaction_figures_use_count_distribution_and_boxplot_summary():
+    notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
+    source = "".join(
+        next(
+            cell
+            for cell in notebook["cells"]
+            if cell["id"] == "venn-structural-robustness"
+        )["source"]
+    )
+
+    assert 'ax.bar(' in source
+    assert 'Consensus top-10 V segments recovered' in source
+    assert 'ax.boxplot(' in source
+    assert '"mean | seed | IQR"' in source
+    assert '100 reruns: IQR and median' in source
+    assert 'fig.text(' not in source
+    assert 'note=' not in source
 
 
 def test_structural_score_and_only_g1_share_match_article_definitions():

@@ -490,7 +490,10 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         raise ValueError("Staged execution requires --spike-run-id.")
     import math
     fractions = sorted(set(float(value) for value in arguments.spike_fractions.split(",")))
-    if not fractions or any(not math.isfinite(f) or not 0 < f < 1 for f in fractions):
+    if not fractions or any(
+        not math.isfinite(fraction) or not 0 < fraction < 1
+        for fraction in fractions
+    ):
         raise ValueError("Spike-in fractions must be finite numbers strictly between 0 and 1.")
     if arguments.spike_clones < 1 or not 0 <= arguments.spike_max_g1_fraction < 1:
         raise ValueError("Use a positive family size and a rarity fraction in [0, 1).")
@@ -520,7 +523,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         raise ValueError("Source, input paths or spike-in settings differ from the baseline.")
 
     def claim(case):
-        # Exclusive creation keeps duplicate array workers from sharing a case directory.
+        # exclusive creation keeps duplicate array workers from sharing a case directory
         with (result_root / f"{case}.started.json").open("x") as handle:
             json.dump({"slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                        "started_at": datetime.now().isoformat()}, handle)
@@ -576,7 +579,10 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         require_baseline()
         complete(case, selection_sha256=selection_digest)
         return
-    cases = ["baseline"] + [f"dose_{i:02d}" for i in range(1, len(fractions) + 1)]
+    cases = ["baseline"] + [
+        f"dose_{dose_index:02d}"
+        for dose_index in range(1, len(fractions) + 1)
+    ]
     if stage == "all":
         for case, fraction in zip(cases[1:], fractions):
             execute_case(case, fraction)

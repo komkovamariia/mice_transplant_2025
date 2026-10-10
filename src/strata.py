@@ -119,9 +119,9 @@ def data_dir() -> Path:
 
 
 def clean_repertoire_path() -> Path:
-    explicit = os.environ.get("MICE_TCR_CLEAN_PARQUET")
-    if explicit:
-        return Path(explicit).expanduser().resolve()
+    configured_path = os.environ.get("MICE_TCR_CLEAN_PARQUET")
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
     return data_dir() / "clean_clonotypes_aaV.parquet"
 
 
@@ -229,7 +229,7 @@ def normalize_repertoire(
             ["sample_id", "cdr3", "v_gene"],
         ].head(5)
         raise ValueError(
-            "The canonical table contains empty or non-functional aaV clonotypes. "
+            "The repertoire table contains empty or non-functional aaV clonotypes. "
             f"Examples: {examples.to_dict('records')}"
         )
 
@@ -270,7 +270,7 @@ def load_repertoire(path: str | Path | None = None) -> pd.DataFrame:
     repertoire_path = Path(path) if path else clean_repertoire_path()
     if not repertoire_path.exists():
         raise FileNotFoundError(
-            f"Canonical repertoire table not found: {repertoire_path}. "
+            f"Repertoire table not found: {repertoire_path}. "
             "Set MICE_TCR_DATA_DIR or MICE_TCR_CLEAN_PARQUET."
         )
 

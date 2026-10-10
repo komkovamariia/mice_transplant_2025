@@ -262,7 +262,7 @@ def _validate_primary_notebook() -> None:
         "plt.savefig = _article_savefig" not in joined
         or "plt.show = _article_show" not in joined
     ):
-        fail("venn_original.ipynb does not persist explicit and displayed figures")
+        fail("venn_original.ipynb does not save all displayed figures")
     _compile_notebook_cells(PRIMARY_NOTEBOOK, notebook)
 
 

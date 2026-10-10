@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute the restored notebook workflow with durable cell-level logging."""
+"""Run analysis notebooks with per-cell logging and checkpoints."""
 
 from __future__ import annotations
 
@@ -288,7 +288,7 @@ def _base_environment(arguments) -> dict[str, str]:
 
 
 def prepare_first_approach_output_directories(selected_strata: list[str]) -> None:
-    """Remove stale generated figures and tables before Approach 1 execution."""
+    """Clear generated outputs for the selected Approach 1 strata."""
     root = repo_root()
     figure_root = root / "figures" / "01_set_count"
     result_root = root / "results" / "01_set_count"
@@ -311,7 +311,7 @@ def prepare_first_approach_output_directories(selected_strata: list[str]) -> Non
 
 
 def archive_first_approach_figures() -> Path:
-    """Create one ZIP containing the complete figures/01_set_count directory."""
+    """Archive the current Approach 1 figure directory."""
     root = repo_root()
     figure_root = root / "figures" / "01_set_count"
     if not figure_root.is_dir():
@@ -336,7 +336,7 @@ def archive_first_approach_figures() -> Path:
 
 
 def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None, spike_case=None) -> None:
-    """Fail immediately when an executed notebook, table, or displayed figure is absent."""
+    """Check the required outputs for completed Approach 1 strata."""
     root = repo_root()
     missing = []
     for stratum in selected_strata:
@@ -458,7 +458,7 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
 
 
 def analysis_fingerprint(root: Path) -> str:
-    """Reject mixed source versions across independently scheduled cases."""
+    """Hash source files used by staged spike-in cases."""
     paths = [root / "venn_original.ipynb", root / "environment.yml"]
     paths += sorted((root / "src").glob("*.py"))
     paths += sorted((root / "scripts").glob("*.py"))
@@ -470,7 +470,7 @@ def analysis_fingerprint(root: Path) -> str:
 
 
 def run_spike_experiment(arguments, base_environment, logger) -> None:
-    """Run sequentially or execute one isolated stage of a Slurm dependency graph."""
+    """Run a spike-in experiment or one staged Slurm step."""
     root = repo_root()
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
@@ -520,7 +520,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         raise ValueError("Source, input paths or spike-in settings differ from the baseline.")
 
     def claim(case):
-        # exclusive creation prevents duplicate array submissions from overwriting a case
+        # Exclusive creation keeps duplicate array workers from sharing a case directory.
         with (result_root / f"{case}.started.json").open("x") as handle:
             json.dump({"slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                        "started_at": datetime.now().isoformat()}, handle)

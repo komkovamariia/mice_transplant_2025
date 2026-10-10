@@ -1,4 +1,4 @@
-"""Approach 2: sequence-space enrichment and repertoire geometry."""
+"""Sequence-space enrichment and repertoire geometry for Approach 2."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def prepare_embedding(
     *,
     seed: int = 0,
 ) -> dict:
-    """Fit one technical coordinate basis shared by all stratum-specific tests."""
+    """Fit the shared sequence-embedding basis used by every stratum."""
     n_workers = available_cpus()
     preset = get_preset("mouse", "TRA")
     model = TCREmp.from_defaults(
@@ -391,7 +391,7 @@ def _sample_geometry(
         APPROACH,
         stratum,
         "repertoire_mmd_pcoa",
-            chain="TRA",
+        chain="TRA",
     )
 
     output = _output_dir()

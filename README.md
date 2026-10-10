@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/komkovamariia/mice_transplant_2025/actions/workflows/validation.yml/badge.svg)](https://github.com/komkovamariia/mice_transplant_2025/actions/workflows/validation.yml)
 
-Authors: Komkova M., Andreev V., Chernov P., Kofiadi I.
+Authors: Andreev V, Komkova M, Nikitina O, Kireev B, Chernov P, Vasilichin V, Menshikov K, Gongadze I, Dmitriev N, Mitin A, Kofiadi I, Khaitov M
 
 This repository contains the TRA and TRB repertoire analysis used in the mouse transplantation study. Approach 1 is the main workflow. It combines exact aaV clonotype sets, V-segment retention, UMI abundance, Fisher testing and edgeR. A separate spike-in experiment measures how an added TRA family propagates through the same pipeline.
 

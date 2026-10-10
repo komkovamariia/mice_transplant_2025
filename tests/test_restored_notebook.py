@@ -167,7 +167,7 @@ def test_rarefaction_figures_use_count_distribution_and_boxplot_summary():
     )
 
     assert 'ax.bar(' in source
-    assert 'Consensus top-10 V segments recovered' in source
+    assert 'Reference top-10 V segments recovered' in source
     assert 'ax.boxplot(' in source
     assert '"mean | seed | IQR"' in source
     assert '100 reruns: IQR and median' in source

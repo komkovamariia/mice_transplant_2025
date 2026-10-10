@@ -1,17 +1,4 @@
-"""Runtime helpers for reproducible, scheduler-aware parallel execution.
-
-The article notebooks run both libraries that parallelize internally (mirpy/seqtree,
-SciPy cKDTree, BLAS) and repseq routines that parallelize across samples.  This module
-uses the requested allocation while avoiding nested process x BLAS oversubscription.
-Outside a scheduler it defaults to one worker; explicit requests remain affinity-bound.
-
-Scientific invariants:
-- scheduling never changes clonotype definitions, filters, thresholds or contrasts;
-- ordered maps preserve input order;
-- PERMANOVA permutations are generated deterministically in the parent process before
-  they are evaluated in parallel;
-- exact mirpy density (kdtree) remains exact; this module does not switch to ANN.
-"""
+"""Scheduler-aware CPU limits and parallel helpers."""
 
 from __future__ import annotations
 
@@ -27,15 +14,15 @@ _REPSEQ_DEFAULT_WORKERS: int | None = None
 def _positive_int(value: str | None) -> int | None:
     if not value:
         return None
-    m = re.search(r"\d+", str(value))
-    if not m:
+    match = re.search(r"\d+", str(value))
+    if not match:
         return None
-    n = int(m.group())
-    return n if n > 0 else None
+    number = int(match.group())
+    return number if number > 0 else None
 
 
 def cpu_limit() -> int:
-    """Hard ceiling from affinity, scheduler allocation and host CPU count."""
+    """Return the CPU ceiling visible to this process."""
     limits: list[int] = []
 
     if hasattr(os, "sched_getaffinity"):
@@ -52,14 +39,14 @@ def cpu_limit() -> int:
             limits.append(n)
 
     limits.append(max(1, os.cpu_count() or 1))
-    # A job without a per-task allocation must not use the entire shared node
+    # A Slurm job without a per-task limit falls back to one worker.
     if os.environ.get("SLURM_JOB_ID") and not _positive_int(os.environ.get("SLURM_CPUS_PER_TASK")):
         limits.append(1)
     return max(1, min(limits))
 
 
 def available_cpus() -> int:
-    """Return the requested workers, always capped by the current allocation."""
+    """Return the requested worker count within the current CPU limit."""
     requested = _positive_int(os.environ.get("ARTICLE_N_JOBS"))
     if requested is None:
         requested = _positive_int(os.environ.get("SLURM_CPUS_PER_TASK")) or 1
@@ -67,27 +54,22 @@ def available_cpus() -> int:
 
 
 def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int:
-    """Configure native thread pools before NumPy/Polars/mirpy are imported.
-
-    Call this at the very beginning of a fresh kernel.  The variables cover BLAS,
-    OpenMP, NumExpr and Polars.  ``TCREmp`` still receives the same returned value
-    explicitly, so seqtree uses exactly the CPUs granted by the scheduler.
-    """
+    """Set thread limits before numerical libraries are imported."""
     global _DEFAULT_WORKERS
 
-    n = int(n_jobs) if n_jobs is not None else available_cpus()
-    if n < 1:
+    workers = int(n_jobs) if n_jobs is not None else available_cpus()
+    if workers < 1:
         raise ValueError("n_jobs must be >= 1")
-    n = min(n, cpu_limit())
-    _DEFAULT_WORKERS = n
+    workers = min(workers, cpu_limit())
+    _DEFAULT_WORKERS = workers
 
     thread_env = {
-        "OMP_NUM_THREADS": n,
-        "OPENBLAS_NUM_THREADS": n,
-        "MKL_NUM_THREADS": n,
-        "NUMEXPR_NUM_THREADS": n,
-        "VECLIB_MAXIMUM_THREADS": n,
-        "POLARS_MAX_THREADS": n,
+        "OMP_NUM_THREADS": workers,
+        "OPENBLAS_NUM_THREADS": workers,
+        "MKL_NUM_THREADS": workers,
+        "NUMEXPR_NUM_THREADS": workers,
+        "VECLIB_MAXIMUM_THREADS": workers,
+        "POLARS_MAX_THREADS": workers,
     }
     for key, value in thread_env.items():
         os.environ[key] = str(value)
@@ -103,7 +85,7 @@ def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int
             except OSError:
                 pass
         print(
-            f"Parallel runtime: {n} CPU worker(s)"
+            f"Parallel runtime: {workers} CPU worker(s)"
             + (f" | affinity={affinity}" if affinity is not None else "")
             + (
                 f" | SLURM_CPUS_PER_TASK={os.environ.get('SLURM_CPUS_PER_TASK')}"
@@ -111,17 +93,19 @@ def configure_runtime(n_jobs: int | None = None, *, verbose: bool = True) -> int
                 else ""
             )
         )
-    return n
+    return workers
 
 
 def _resolve_jobs(n_jobs: int | None, n_tasks: int | None = None) -> int:
-    n = int(n_jobs) if n_jobs is not None else (_DEFAULT_WORKERS or available_cpus())
-    if n < 1:
+    workers = int(n_jobs) if n_jobs is not None else (
+        _DEFAULT_WORKERS or available_cpus()
+    )
+    if workers < 1:
         raise ValueError("n_jobs must be >= 1")
-    n = min(n, cpu_limit())
+    workers = min(workers, cpu_limit())
     if n_tasks is not None:
-        n = min(n, max(1, n_tasks))
-    return max(1, n)
+        workers = min(workers, max(1, n_tasks))
+    return max(1, workers)
 
 
 def _repseq_parallel_runner(
@@ -132,44 +116,35 @@ def _repseq_parallel_runner(
     verbose=True,
     cpu=None,
 ):
-    """Drop-in replacement for repseq.common_functions.run_parallel_calculation.
-
-    repseq's pinned implementation uses ``ProcessPoolExecutor(max_workers=None)``.
-    On Python 3.12 that default may not use every allocated core and nested numerical
-    libraries can oversubscribe each worker.  joblib/loky lets us request the exact
-    scheduler allocation and cap each worker's native BLAS/OpenMP pool to one thread.
-    Results are returned in input order, matching ``executor.map`` semantics.
-    """
+    """Run repseq sample tasks within the configured CPU limit."""
     tasks = list(tasks)
     n_tasks = len(tasks)
     if n_tasks == 0:
         return []
 
-    n = _resolve_jobs(cpu or _REPSEQ_DEFAULT_WORKERS, n_tasks)
+    workers = _resolve_jobs(cpu or _REPSEQ_DEFAULT_WORKERS, n_tasks)
     if verbose:
-        print(f"{program_name}: {n_tasks} {object_name}; using {n} process worker(s)")
+        print(
+            f"{program_name}: {n_tasks} {object_name}; "
+            f"using {workers} process worker(s)"
+        )
 
-    if n == 1:
+    if workers == 1:
         return [function(task) for task in tasks]
 
     from joblib import Parallel, delayed, parallel_config
 
-    with parallel_config(backend="loky", n_jobs=n, inner_max_num_threads=1):
+    with parallel_config(backend="loky", n_jobs=workers, inner_max_num_threads=1):
         return Parallel()(delayed(function)(task) for task in tasks)
 
 
 def configure_repseq_parallelism(
     n_jobs: int | None = None, *, verbose: bool = True
 ) -> int:
-    """Make repseq batch/sample calculations use all allocated CPUs safely.
-
-    Several repseq modules import ``run_parallel_calculation`` into module scope, so
-    patching only ``repseq.common_functions`` is insufficient.  We patch all modules
-    used by this repository.  This changes scheduling only, not calculations.
-    """
+    """Apply the configured worker limit to repseq modules used here."""
     global _REPSEQ_DEFAULT_WORKERS
-    n = _resolve_jobs(n_jobs)
-    _REPSEQ_DEFAULT_WORKERS = n
+    workers = _resolve_jobs(n_jobs)
+    _REPSEQ_DEFAULT_WORKERS = workers
 
     module_names = (
         "repseq.common_functions",
@@ -190,8 +165,8 @@ def configure_repseq_parallelism(
             patched.append(module_name)
 
     if verbose:
-        print(f"repseq parallelism: {n} worker(s); patched {', '.join(patched)}")
-    return n
+        print(f"repseq parallelism: {workers} worker(s); patched {', '.join(patched)}")
+    return workers
 
 
 def parallel_map(
@@ -202,24 +177,18 @@ def parallel_map(
     prefer: str = "threads",
     batch_size="auto",
 ):
-    """Ordered parallel map for independent tasks.
-
-    ``prefer='threads'`` is appropriate for independent file I/O and NumPy kernels
-    that release the GIL.  ``prefer='processes'`` uses loky with one native thread per
-    process to prevent oversubscription.  The returned list has the same order as
-    ``items``.
-    """
+    """Map independent tasks in input order."""
     items = list(items)
     if not items:
         return []
-    n = _resolve_jobs(n_jobs, len(items))
-    if n == 1:
+    workers = _resolve_jobs(n_jobs, len(items))
+    if workers == 1:
         return [function(item) for item in items]
 
     from joblib import Parallel, delayed, parallel_config
 
     if prefer == "processes":
-        with parallel_config(backend="loky", n_jobs=n, inner_max_num_threads=1):
+        with parallel_config(backend="loky", n_jobs=workers, inner_max_num_threads=1):
             return Parallel(batch_size=batch_size)(
                 delayed(function)(item) for item in items
             )
@@ -230,7 +199,7 @@ def parallel_map(
     from threadpoolctl import threadpool_limits
 
     with threadpool_limits(limits=1):
-        return Parallel(n_jobs=n, prefer="threads", batch_size=batch_size)(
+        return Parallel(n_jobs=workers, prefer="threads", batch_size=batch_size)(
             delayed(function)(item) for item in items
         )
 
@@ -238,14 +207,7 @@ def parallel_map(
 def permanova_parallel(
     D, labels, n_perm: int = 9999, seed: int = 0, n_jobs: int | None = None
 ):
-    """Deterministic parallel one-factor PERMANOVA on a distance matrix.
-
-    The permutation schedule is generated *once* in the parent process using the given
-    seed and then split into batches.  Therefore worker completion order cannot change
-    the p-value.  This also fixes a bug in the historical notebook implementation where
-    the helper ignored its permuted-label argument and accidentally recomputed the
-    observed statistic for every permutation.
-    """
+    """Run one-factor PERMANOVA with a fixed permutation schedule."""
     import numpy as np
 
     D = np.asarray(D, dtype=np.float64)
@@ -282,7 +244,7 @@ def permanova_parallel(
     if n_perm <= 0:
         return F_obs, 1.0
 
-    # generate permutations serially so the RNG stream is independent of worker count
+    # Generate permutations before dispatch so worker count cannot change the RNG stream.
     rng = np.random.default_rng(seed)
     perm_codes = np.empty((n_perm, n), dtype=np.int16 if a < 32768 else np.int32)
     for i in range(n_perm):

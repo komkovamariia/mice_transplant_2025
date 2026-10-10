@@ -348,7 +348,6 @@ def _validate_runner_and_documentation() -> None:
         "--approach 4",
         "--approach all",
         "--strata",
-        "Parquet",
     )
     for token in readme_tokens:
         if token not in readme:

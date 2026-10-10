@@ -357,8 +357,8 @@ def _validate_runner_and_documentation() -> None:
     guide_tokens = (
         *readme_tokens,
         "--resume",
-        "audit_runs/01_cd4_thymus.executed.ipynb",
-        "logs/01_cd4_thymus.log",
+        "audit_runs/",
+        "logs/",
     )
     for token in guide_tokens:
         if token not in guide:

@@ -1,4 +1,4 @@
-"""Approach 3: clone-level prioritization from independent evidence layers."""
+"""Rank clonotypes by prevalence, abundance and local sequence convergence."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def _sequence_features(cdr3: pd.Series) -> pd.DataFrame:
 
 
 def _convergence_degree(features: pd.DataFrame) -> pd.Series:
-    """Count same-V, same-length CDR3 neighbors at Hamming distance one."""
+    """Count same-V, same-length CDR3 neighbors one substitution away."""
     degree = pd.Series(0, index=features.index, dtype=int)
     for (_, length), block in features.groupby(["v_gene", features["cdr3"].str.len()]):
         wildcard_members = defaultdict(set)

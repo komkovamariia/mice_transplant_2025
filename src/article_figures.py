@@ -37,7 +37,7 @@ ARTICLE_FIGURES = {
 }
 ARTICLE_FONTS = ["Arial", "Liberation Sans", "DejaVu Sans"]
 INITIAL_SHARE = 0.6
-RETENTION = 66
+RETENTION = 70
 REGIONS = {
     "100": "g1 only",
     "110": "g1 ∩ g5\nwithout g6",
@@ -101,8 +101,14 @@ def _title(ax, title, size=13, pad=5):
     ax.set_title(title, fontsize=size, fontweight="normal", pad=pad)
 
 
+def eligible_segments(profile):
+    return profile.loc[
+        profile[SHARE_COLUMN].ge(INITIAL_SHARE) & profile[RETENTION_COLUMN].ge(RETENTION)
+    ]
+
+
 def plot_dumbbell(profile, chain, suffix=""):
-    rows = profile.loc[profile[SHARE_COLUMN].ge(INITIAL_SHARE)].sort_values(
+    rows = eligible_segments(profile).sort_values(
         SCORE_COLUMNS, ascending=[False, False, False, True],
     ).head(20)
     fig = article_canvas("dumbbell")
@@ -115,7 +121,7 @@ def plot_dumbbell(profile, chain, suffix=""):
     ax.set_ylabel(f"{chain} V segment", fontsize=10)
     ax.yaxis.set_label_coords(-0.172, 0.5)
     if rows.empty:
-        empty_axis(ax, "No V segment passed the initial representation threshold.")
+        empty_axis(ax, "No V segments met both selection thresholds.")
         return fig
     y = np.arange(len(rows))
     retained = rows["frequency_remaining_in_g1_pct_relative_to_original"]
@@ -131,9 +137,7 @@ def plot_dumbbell(profile, chain, suffix=""):
 def bubble_candidates(profile, limit):
     plotted = profile.dropna(subset=SCORE_COLUMNS + [COUNT_COLUMN, "region_entropy"])
     plotted = plotted.loc[plotted[COUNT_COLUMN].gt(0) & plotted[SHARE_COLUMN].gt(0)]
-    eligible = plotted.loc[
-        plotted[SHARE_COLUMN].ge(INITIAL_SHARE) & plotted[RETENTION_COLUMN].ge(RETENTION)
-    ]
+    eligible = eligible_segments(plotted)
     selected = eligible.sort_values(SCORE_COLUMNS, ascending=[False, False, False, True]).head(limit)
     return plotted, selected
 
@@ -224,7 +228,8 @@ def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, co
     ax.set_ylabel(f"{chain} V segment", fontsize=size, labelpad=7)
     if not compact:
         ax.yaxis.set_label_coords(-0.191, 0.5)
-    rows = profile.loc[profile["v"].isin(genes)].reindex(columns=["v", "score_s", *REGIONS])
+    rows = eligible_segments(profile.loc[profile["v"].isin(genes)])
+    rows = rows.reindex(columns=["v", "score_s", *REGIONS])
     rows = rows.fillna({column: 0.0 for column in REGIONS})
     if rows.empty:
         empty_axis(ax, "No V segments passed both retention thresholds.")

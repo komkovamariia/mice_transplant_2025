@@ -4,11 +4,19 @@ import json
 import re
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
 from scripts import run_analysis
-from src.article_figures import ARTICLE_FIGURES, article_name, bubble_candidates
+from src.article_figures import (
+    ARTICLE_FIGURES,
+    article_name,
+    bubble_candidates,
+    plot_dumbbell,
+    plot_localization,
+    plot_subsets,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,7 +139,8 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
         {
             "v": ["TRAV-low-share", "TRAV-low-retention", "TRAV-middle", "TRAV-top"],
             "score_s": [0.99, 0.90, 0.20, 0.30],
-            "retained_cdr3_share_pct": [100.0, 65.0, 66.0, 80.0],
+            "retained_cdr3_share_pct": [100.0, 69.99, 70.0, 80.0],
+            "frequency_remaining_in_g1_pct_relative_to_original": [0.5, 3.4995, 0.42, 1.6],
             "cdr3_in_full_g1": [10, 10, 10, 10],
             "frequency_in_full_g1_pct": [0.5, 5.0, 0.6, 2.0],
             "region_entropy": [0.5, 0.4, 0.3, 0.2],
@@ -139,7 +148,22 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
     )
     displayed, labeled = bubble_candidates(candidates, limit=2)
     assert len(displayed) == 4
-    assert labeled["v"].tolist() == ["TRAV-top", "TRAV-middle"]
+    expected = ["TRAV-top", "TRAV-middle"]
+    assert labeled["v"].tolist() == expected
+
+    for chain in ("TRA", "TRB"):
+        dumbbell = plot_dumbbell(candidates, chain)
+        heatmap = plot_localization(candidates, candidates["v"].tolist(), chain)
+        subsets = plot_subsets({"CD8+": candidates, "CD4+": candidates}, chain)
+        try:
+            assert [tick.get_text() for tick in dumbbell.axes[0].get_yticklabels()] == expected
+            assert {tick.get_text() for tick in heatmap.axes[0].get_yticklabels()} == set(expected)
+            for bubble, localization in zip(subsets.axes[::4], subsets.axes[2::4], strict=True):
+                assert list(bubble.lines[1].get_ydata()) == [70, 70]
+                assert {tick.get_text() for tick in localization.get_yticklabels()} == set(expected)
+        finally:
+            for figure in (dumbbell, heatmap, subsets):
+                plt.close(figure)
 
 
 

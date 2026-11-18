@@ -34,10 +34,10 @@ The graphical thresholds are:
 
 ```text
 f_full(v) >= 0.006
-r(v) >= 0.66
+r(v) >= 0.70
 ```
 
-The dumbbell plot orders V segments by decreasing `S(v)` after applying the initial-share threshold. Bubble labels are ranked by `S(v)` among points meeting both dashed thresholds. The combined bubble marks up to 11 segments and the separate CD8+ and CD4+ panels mark up to 10 each. Each heatmap uses its paired bubble's selected segments and orders them by g1-only regional share, then by `S(v)`. The separate structural panels restrict the combined run's rarefied libraries to the indicated subset and recompute the set intersections.
+The dumbbell plot orders V segments by decreasing `S(v)` after applying both graphical thresholds. Bubble labels are ranked by `S(v)` among points meeting both dashed thresholds. The combined bubble marks up to 11 segments and the separate CD8+ and CD4+ panels mark up to 10 each. Each heatmap uses its paired bubble's selected segments and orders them by g1-only regional share, then by `S(v)`. These thresholds apply to TRA and TRB in the combined and subset-specific figures. The representative-seed selection and the spike-in family selection retain their original 66% eligibility criterion. The separate structural panels restrict the combined run's rarefied libraries to the indicated subset and recompute the set intersections.
 
 The heatmap uses four mutually exclusive g1-containing regions:
 

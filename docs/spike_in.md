@@ -6,7 +6,7 @@ The spike-in experiment measures how an added TRA or TRB family moves through th
 
 The runner first executes the unmodified combined baseline. TRA and TRB group matrices are saved with checksums and sample metadata.
 
-A target V segment must be outside the baseline graphical candidate set defined by:
+A target V segment must be outside the original baseline candidate set for the spike-in protocol defined by:
 
 ```text
 frequency_in_full_g1 >= 0.006

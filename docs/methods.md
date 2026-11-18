@@ -37,7 +37,7 @@ f_full(v) >= 0.006
 r(v) >= 0.66
 ```
 
-Eligible V segments are ordered by decreasing `S(v)`. The dumbbell plot uses this order. The bubble plot labels the seven highest-scoring displayed V segments. The localization heatmap uses up to ten threshold-eligible V segments and orders its rows by g1-only regional share, then by `S(v)`.
+The dumbbell plot orders V segments by decreasing `S(v)` after applying the initial-share threshold. Bubble labels are ranked by `S(v)` among points meeting both dashed thresholds. The combined bubble marks up to 11 segments and the separate CD8+ and CD4+ panels mark up to 10 each. Each heatmap uses its paired bubble's selected segments and orders them by g1-only regional share, then by `S(v)`. The separate structural panels restrict the combined run's rarefied libraries to the indicated subset and recompute the set intersections.
 
 The heatmap uses four mutually exclusive g1-containing regions:
 
@@ -56,7 +56,13 @@ H(v) = -sum(p_region(v) * log2(p_region(v))) / log2(4)
 
 Zero-probability terms contribute zero. This UMI-weighted entropy is separate from the unique-aaV preservation score `S(v)`.
 
+## Depth check and MDS
+
+The depth check uses the same g1/g2 libraries at all five depths (10,000, 13,000, 15,000, 20,000 and 30,000 functional UMI). At each depth, 50 independent draws are compared with the full-depth profiles of those libraries. The figure shows the median and 5th–95th percentiles of Spearman correlation between pairwise F2 similarities and Procrustes disparity between the two-dimensional classical MDS configurations. The manuscript MDS scatter uses the main rarefaction depth and its eligible g1/g2 libraries. Classical MDS uses `-log10(F2)` as the dissimilarity. For zero overlap, F2 is replaced by half the lowest strictly positive off-diagonal similarity. The horizontal break is drawn when a large internal gap is present.
+
 ## Differential abundance
+
+The combined analysis fits Fisher and edgeR separately for TRA and TRB.
 
 Fisher testing compares pooled g1 with pooled g5+g6 counts. The displayed effect size is:
 

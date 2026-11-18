@@ -1,4 +1,4 @@
-"""Add fixed TRA spike-ins to count matrices and summarize recovery."""
+"""Add fixed aaV spike-ins to count matrices and summarize recovery."""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ import pandas as pd
 
 SUBTRACTION_GROUPS = ("g2", "g4", "g5", "g6")
 DEFAULT_FRACTIONS = (0.0001, 0.001, 0.01)
+ARTICLE_FRACTIONS = (
+    0.0000001, 0.0000002, 0.0000005, 0.000001, 0.000002, 0.000005, 0.00001, 0.00002,
+    0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.10,
+)
 EDGER_SUCCESS = "edgeR quasi-likelihood model fitted successfully."
 
 
@@ -93,11 +97,15 @@ def select_targets(
     ranking: pd.DataFrame,
     *,
     v_gene: str | None = None,
+    chain: str = "TRA",
     n_clones: int = 10,
     max_g1_fraction: float = 1e-5,
     seed: int = 1031,
 ) -> dict:
-    """Select observed, control-absent aaV from a baseline noncandidate TRAV."""
+    """Select observed, control-absent aaV from a baseline noncandidate V segment."""
+    if chain not in {"TRA", "TRB"}:
+        raise ValueError("The spike-in chain must be TRA or TRB.")
+    v_prefix = chain + "V"
     if n_clones < 1 or not np.isfinite(max_g1_fraction) or not 0 <= max_g1_fraction < 1:
         raise ValueError("Use n_clones >= 1 and a finite rarity fraction in [0, 1).")
     checked = {group: validate_counts(table) for group, table in tables.items()}
@@ -122,7 +130,7 @@ def select_targets(
     excluded_genes = graphical | inferential
     eligible = {}
     for key in sorted(observed - forbidden):
-        if not key[1].startswith("TRAV") or key[1] in excluded_genes:
+        if not key[1].startswith(v_prefix) or key[1] in excluded_genes:
             continue
         if float(frequencies.get(key, 0)) <= max_g1_fraction:
             eligible.setdefault(key[1], []).append(key)
@@ -134,7 +142,7 @@ def select_targets(
         )
     if not enough:
         raise ValueError(
-            f"No noncandidate TRAV has {n_clones} observed, rare-in-g1 aaV absent from "
+            f"No noncandidate {v_prefix} has {n_clones} observed, rare-in-g1 aaV absent from "
             "g2/g4/g5/g6. Try an explicitly smaller --spike-clones value or review "
             "--spike-max-g1-fraction. No synthetic sequences were invented."
         )
@@ -156,6 +164,7 @@ def select_targets(
             break
     return {
         "v_gene": chosen_gene,
+        "chain": chain,
         "clonotypes": [list(key) for key in selected],
         "n_clones": n_clones,
         "seed": seed,
@@ -165,7 +174,7 @@ def select_targets(
         "eligible_genes": {gene: len(keys) for gene, keys in sorted(enough.items())},
         "excluded_graphical_candidates": sorted(graphical),
         "excluded_inferential_candidates": sorted(inferential),
-        "relatedness": "same exact TRAV annotation; observed CDR3aa sequences",
+        "relatedness": f"same exact {v_prefix} annotation; observed CDR3aa sequences",
         "dose_definition": "total added family UMI / original UMI library in each g1 sample",
         "allocation": "equal shares with deterministic largest-remainder rounding",
     }
@@ -179,7 +188,7 @@ def apply_spike_to_tables(tables: dict, selection: dict, fraction: float):
     if not keys or len(keys) != len(set(keys)):
         raise ValueError("Select at least one unique aaV clonotype.")
     if any(key[1] != selection["v_gene"] for key in keys):
-        raise ValueError("Every selected aaV must use the selected TRAV.")
+        raise ValueError("Every selected aaV must use the selected V segment.")
     controls = set().union(
         *(set(result[group].index) for group in SUBTRACTION_GROUPS)
     )
@@ -266,15 +275,15 @@ def write_case_metrics(directory, selection, fraction, g1, remaining, retention,
 
 
 def write_baseline_metrics(directory: Path, selection: dict):
-    tables = load_snapshot_tables(directory, "TRA")
-    controls = set().union(
-        *(set(tables[group].index) for group in SUBTRACTION_GROUPS)
-    )
+    chain = selection.get("chain", "TRA")
+    tables = load_snapshot_tables(directory, chain)
+    remainder = pd.read_csv(directory / "spike_baseline_remainder.csv", dtype=str, keep_default_na=False)
+    edger_name = "edger_aav_results.csv" if chain == "TRA" else "trb_edger_aav_results.csv"
     return write_case_metrics(
-        directory, selection, 0.0, tables["g1"], set(tables["g1"].index) - controls,
-        pd.read_csv(directory / "tra_v_retention.csv"),
-        pd.read_csv(directory / "edger_aav_results.csv"),
-        pd.read_csv(directory / "trav_ranking.csv"),
+        directory, selection, 0.0, tables["g1"], set(remainder.itertuples(index=False, name=None)),
+        pd.read_csv(directory / f"{chain.lower()}_v_retention.csv"),
+        pd.read_csv(directory / edger_name),
+        pd.read_csv(directory / f"{chain.lower()}v_ranking.csv"),
     )
 
 
@@ -319,7 +328,9 @@ def sensitivity_summary(frame: pd.DataFrame) -> dict:
     }
 
 
-def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str]) -> pd.DataFrame:
+def summarize_experiment(
+    result_root: Path, figure_root: Path, cases: list[str], *, chain: str = "TRA",
+) -> pd.DataFrame:
     rows = [json.loads((result_root / case / "spike_metrics.json").read_text()) for case in cases]
     frame = pd.DataFrame(rows).sort_values("fraction").reset_index(drop=True)
     frame["v_final_rank"] = pd.to_numeric(frame["v_final_rank"], errors="coerce")
@@ -340,85 +351,20 @@ def summarize_experiment(result_root: Path, figure_root: Path, cases: list[str])
     (result_root / "sensitivity_bounds.json").write_text(json.dumps(bounds, indent=2) + "\n")
 
     import matplotlib.pyplot as plt
-    from src.figures import CORAL, PURPLE, apply_article_style
+    from src.article_figures import (
+        ARTICLE_FONTS, article_dpi, article_name, panel_bbox, plot_spike_in,
+    )
 
-    apply_article_style()
-    output = figure_root / "TRA"
+    output = figure_root / chain
     output.mkdir(parents=True, exist_ok=True)
-    dose_positions = np.arange(len(frame))
-    dose_labels = [
-        "baseline" if fraction == 0 else f"{100 * fraction:g}%"
-        for fraction in frame["fraction"]
-    ]
-    tick_positions = np.arange(0, len(frame), 2)
-    if tick_positions[-1] != len(frame) - 1:
-        tick_positions = np.append(tick_positions, len(frame) - 1)
-
-    panels = [
-        (
-            "recovery_fraction",
-            "Exact aaV recovery",
-            "Recovered aaV fraction",
-            "spike_exact_recovery.png",
-            "all_selected_in_remainder",
-            False,
-        ),
-        (
-            "edger_positive_recovery_fraction",
-            "edgeR recovery",
-            "Significant aaV fraction",
-            "spike_edger_recovery.png",
-            "all_edger_positive_fdr",
-            False,
-        ),
-        (
-            "v_umi_share_g1",
-            f"{frame.iloc[0]['v_gene']} UMI share",
-            "UMI share in g1",
-            "spike_umi_share.png",
-            None,
-            False,
-        ),
-        (
-            "v_final_rank",
-            "Integrated V-segment rank",
-            "Integrated rank",
-            "spike_final_rank.png",
-            None,
-            True,
-        ),
-    ]
-
-    for column, title, ylabel, filename, pass_column, invert_y in panels:
-        fig, ax = plt.subplots(figsize=(7.2, 4.8))
-        ax.plot(
-            dose_positions,
-            frame[column],
-            marker="o",
-            markersize=4.5,
-            linewidth=1.7,
-            color=CORAL,
-        )
-        if pass_column is not None:
-            passing = frame.index[frame[pass_column].fillna(False)]
-            if len(passing):
-                first = int(passing[0])
-                ax.axvline(first, color=PURPLE, linestyle=":", linewidth=1.2)
-                ax.scatter([first], [frame.loc[first, column]], s=70, color=PURPLE, zorder=4)
-        ax.set_xticks(
-            tick_positions,
-            [dose_labels[position] for position in tick_positions],
-            rotation=45,
-            ha="right",
-        )
-        ax.set_xlabel("Added family UMI relative to the original g1 UMI library")
-        ax.set_ylabel(ylabel)
-        ax.set_title(f"TRA g1: {title}")
-        ax.grid(False)
-        if invert_y:
-            ax.invert_yaxis()
-        fig.tight_layout()
-        fig.savefig(output / filename, dpi=300, bbox_inches="tight")
+    filename = article_name(chain, "spike_in")
+    surplus = output / "surplus"
+    surplus.mkdir(exist_ok=True)
+    with plt.rc_context({"font.family": "sans-serif", "font.sans-serif": ARTICLE_FONTS}):
+        fig = plot_spike_in(frame, chain)
+        fig.savefig(output / filename, dpi=article_dpi(filename))
+        for ax, panel in zip(fig.axes, ("exact_recovery", "edger_recovery", "umi_share", "final_rank"), strict=True):
+            fig.savefig(surplus / f"spike_{panel}.png", dpi=300, bbox_inches=panel_bbox(ax))
         plt.close(fig)
 
     report = [

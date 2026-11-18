@@ -122,7 +122,8 @@ def staged_run(tmp_path, monkeypatch):
     monkeypatch.setattr(run_analysis, "execute_notebook", execute)
     summaries = []
 
-    def summarize(result, figures, cases):
+    def summarize(result, figures, cases, *, chain):
+        assert chain == "TRA"
         summaries.append(cases)
         figures.mkdir(parents=True)
         (figures / "summary.png").write_bytes(b"test")

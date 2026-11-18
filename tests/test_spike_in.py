@@ -133,19 +133,14 @@ def test_injected_counts_reach_real_notebook_exact_sets_and_pooled_inference(tmp
         {"sample_id": sample, "group_no": g, "mouse_id": f"{g}_m1", "mouse_no": 1}
         for g, table in changed.items() for sample in table.columns
     ])
-    scope.update({f"ct_{g}_aaV_tra": table for g, table in changed.items()})
-    scope.update({f"raw_ct_{g}_aaV_tra": table for g, table in changed.items()})
     scope.update(metadata=md, POOL_WITHIN_MOUSE=True, RESULT_DIR=tmp_path,
-                 combine_count_tables=combine_count_tables, display=lambda *a: None)
-    # the cell's scipy/statsmodels imports belong to the next Fisher step
-    code = _cell("venn-differential-input")
-    code = "\n".join(line for line in code.splitlines() if not line.startswith("from scipy")
-                     and not line.startswith("from statsmodels"))
-    exec(code, scope)
-    pooled = scope["ct_tra_aaV"]
+                 RUN_MODE="spike-in", SPIKE_CHAIN="TRA",
+                 _tables_for_chain=lambda chain, raw=False: changed, display=lambda *a: None)
+    exec(_cell("venn-differential-input"), scope)
+    pooled, sample_metadata = scope["count_inputs"]["TRA"]
     assert pooled["g1|g1_m1"].sum() == 30030
     assert pooled.at[("CASS", "TRAV9"), "g1|g1_m1"] == 15
-    assert scope["sample_metadata"].index.is_unique
+    assert sample_metadata.index.is_unique
     assert pooled.shape[1] == 4
 
 
@@ -216,5 +211,7 @@ def test_summary_records_entry_from_unranked_baseline_without_inventing_a_rank(t
         "spike_umi_share.png",
         "spike_final_rank.png",
     }
-    assert {path.name for path in (tmp_path / "figures" / "TRA").glob("*.png")} == expected
+    output = tmp_path / "figures" / "TRA"
+    assert {path.name for path in output.glob("*.png")} == {"TRA_g1_spike_in_sensitivity.png"}
+    assert {path.name for path in (output / "surplus").glob("*.png")} == expected
     assert not list((tmp_path / "figures").rglob("*.pdf"))

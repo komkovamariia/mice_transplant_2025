@@ -1,9 +1,7 @@
-"""Fit the notebook's actual edgeR cell on synthetic mouse-level libraries."""
+"""Fit the notebook's edgeR model on synthetic mouse-level libraries."""
 
 import importlib.util
-import json
 import shutil
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,7 +12,7 @@ import pytest
     shutil.which("Rscript") is None or importlib.util.find_spec("rpy2") is None,
     reason="Requires R, edgeR and rpy2; exercised by the edgeR integration CI job.",
 )
-def test_notebook_edger_recovers_injected_aav_with_real_r(tmp_path):
+def test_notebook_edger_recovers_injected_aav_with_real_r():
     from src.spike_in import apply_spike_to_tables, combine_count_tables
 
     rng = np.random.default_rng(1031)
@@ -32,13 +30,10 @@ def test_notebook_edger_recovers_injected_aav_with_real_r(tmp_path):
     metadata = pd.DataFrame({"contrast_group": [
         "g1" if sample.startswith("g1_") else "allogeneic" for sample in counts.columns
     ]}, index=counts.columns)
-    notebook = json.loads((Path(__file__).resolve().parents[1] / "venn_original.ipynb").read_text())
-    source = "".join(next(c for c in notebook["cells"] if c["id"] == "venn-edger")["source"])
-    scope = {"ct_tra_aaV": counts, "sample_metadata": metadata, "pd": pd,
-             "RESULT_DIR": tmp_path, "display": lambda *args: None}
-    exec(compile(source, "venn_original.ipynb:edgeR", "exec"), scope)
-    assert scope["EDGER_STATUS"] == "edgeR quasi-likelihood model fitted successfully."
-    result = scope["edgeR_res_g1"]
+    from src.differential_abundance import fit_edger
+
+    result, status = fit_edger(counts, metadata)
+    assert status == "edgeR quasi-likelihood model fitted successfully."
     injected = result[result["feature_id"].isin([("CASSQ", "TRAV9"), ("CASSR", "TRAV9")])]
     assert len(injected) == 2
     assert injected["logFC"].gt(0).all()

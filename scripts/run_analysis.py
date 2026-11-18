@@ -335,10 +335,16 @@ def archive_first_approach_figures() -> Path:
     return archive_path
 
 
-def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None, spike_case=None) -> None:
+def verify_first_approach_outputs(
+    selected_strata: list[str], *, spike_run=None, spike_case=None, spike_chain="TRA",
+) -> None:
     """Check the required outputs for completed Approach 1 strata."""
+    from src.article_figures import ARTICLE_FIGURES, article_name
+
     root = repo_root()
     missing = []
+    report_chain = "TRA" if spike_run is None else spike_chain
+    prefix = report_chain.lower() + "v"
     for stratum in selected_strata:
         stem = STRATUM_BY_KEY[stratum]
         result_dir = root / "results" / "01_set_count" / stratum
@@ -349,8 +355,8 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
             root / "audit_runs" / f"{stem}.executed.ipynb",
             root / "logs" / f"{stem}.log",
             result_dir / "run_summary.json",
-            result_dir / "trav_ranking.csv",
-            result_dir / "distinctive_trav.csv",
+            result_dir / f"{prefix}_ranking.csv",
+            result_dir / f"distinctive_{prefix}.csv",
             result_dir / "figure_manifest.csv",
         ]
         representative_seed_strata = {"all_combined", "cd4_combined", "cd8_combined"}
@@ -364,6 +370,11 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
                     result_dir / "tra_top10_only_g1_summary.csv",
                 ]
             )
+        if spike_run is None and stratum == "all_combined":
+            result_names = ["trbv_ranking.csv", "distinctive_trbv.csv"]
+            for chain in ("tra", "trb"):
+                result_names.extend([f"{chain}_depth_check.csv", f"{chain}_mds_coordinates.csv"])
+            missing.extend(result_dir / name for name in result_names if not (result_dir / name).is_file())
         missing.extend(path for path in required if not path.is_file())
 
         summary_path = required[2]
@@ -374,8 +385,12 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
                 raise RuntimeError(
                     f"edgeR did not complete for {stratum}: {edger_status}"
                 )
+            if spike_run is None and stratum == "all_combined":
+                status = run_summary.get("edger_status_by_chain", {}).get("TRB", "missing")
+                if status != "edgeR quasi-likelihood model fitted successfully.":
+                    raise RuntimeError(f"TRB edgeR did not complete for {stratum}: {status}")
 
-        manifest_path = required[-1]
+        manifest_path = result_dir / "figure_manifest.csv"
         if not manifest_path.is_file():
             continue
         manifest = pd.read_csv(manifest_path)
@@ -394,6 +409,19 @@ def verify_first_approach_outputs(selected_strata: list[str], *, spike_run=None,
                 f"Missing V-segment localization figure for {stratum}: "
                 f"{sorted(missing_localization)}"
             )
+        if spike_run is None and stratum == "all_combined":
+            base = Path("figures") / "01_set_count" / stratum
+            published = {Path(path) for path in manifest["png"].dropna()}
+            expected = {
+                base / chain / article_name(chain, panel)
+                for chain in ("TRA", "TRB") for panel in ARTICLE_FIGURES if panel != "spike_in"
+            }
+            missing_figures = expected - published
+            if missing_figures:
+                raise RuntimeError(f"Missing all_combined article figures: {sorted(map(str, missing_figures))}")
+            misplaced = [path for path in published - expected if path.parent.name != "surplus"]
+            if misplaced:
+                raise RuntimeError(f"Auxiliary figures are outside surplus: {sorted(map(str, misplaced))}")
         if spike_run is None and stratum in representative_seed_strata:
             required_stability = {
                 "TRA_g1_rarefaction_stability.png",
@@ -475,7 +503,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     from src.spike_in import (
-        load_snapshot_tables, select_targets, summarize_experiment,
+        ARTICLE_FRACTIONS, load_snapshot_tables, select_targets, summarize_experiment,
         validate_case_name, write_baseline_metrics,
     )
 
@@ -489,7 +517,11 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
     if stage != "all" and not arguments.spike_run_id:
         raise ValueError("Staged execution requires --spike-run-id.")
     import math
-    fractions = sorted(set(float(value) for value in arguments.spike_fractions.split(",")))
+    spike_chain = getattr(arguments, "spike_chain", "TRA")
+    fractions = (
+        list(ARTICLE_FRACTIONS) if arguments.spike_fractions == "article"
+        else sorted(set(float(value) for value in arguments.spike_fractions.split(",")))
+    )
     if not fractions or any(
         not math.isfinite(fraction) or not 0 < fraction < 1
         for fraction in fractions
@@ -507,7 +539,7 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
     )}
     input_environment.update(base_environment)
     configuration = {
-        "run_id": run_id, "stratum": "all_combined", "fractions": fractions,
+        "run_id": run_id, "stratum": "all_combined", "chain": spike_chain, "fractions": fractions,
         "seed": arguments.spike_seed, "n_clones": arguments.spike_clones,
         "requested_v_gene": arguments.spike_v_gene,
         "max_g1_fraction": arguments.spike_max_g1_fraction,
@@ -550,16 +582,18 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
             environment={**base_environment, "MICE_TCR_STRATUM": "all_combined",
                 "MICE_TCR_MODE": "spike-in", "MICE_TCR_SPIKE_RUN_ID": run_id,
                 "MICE_TCR_SPIKE_CASE": case, "MICE_TCR_SPIKE_FRACTION": str(fraction),
+                "MICE_TCR_SPIKE_CHAIN": spike_chain,
                 "MICE_TCR_FINALIZE_SUMMARY": "0"}, resume=False)
-        verify_first_approach_outputs(["all_combined"], spike_run=run_id, spike_case=case)
+        verify_first_approach_outputs(["all_combined"], spike_run=run_id, spike_case=case, spike_chain=spike_chain)
 
     if stage in ("all", "baseline"):
         execute_case("baseline", 0)
         baseline = result_root / "baseline"
-        selection = select_targets(load_snapshot_tables(baseline, "TRA"),
-            pd.read_csv(baseline / "tra_v_retention.csv"),
-            pd.read_csv(baseline / "trav_ranking.csv"),
-            v_gene=arguments.spike_v_gene, n_clones=arguments.spike_clones,
+        chain_prefix = spike_chain.lower()
+        selection = select_targets(load_snapshot_tables(baseline, spike_chain),
+            pd.read_csv(baseline / f"{chain_prefix}_v_retention.csv"),
+            pd.read_csv(baseline / f"{chain_prefix}v_ranking.csv"),
+            chain=spike_chain, v_gene=arguments.spike_v_gene, n_clones=arguments.spike_clones,
             max_g1_fraction=arguments.spike_max_g1_fraction, seed=arguments.spike_seed)
         (result_root / "selection.json").write_text(json.dumps(selection, indent=2) + "\n")
         write_baseline_metrics(baseline, selection)
@@ -592,9 +626,9 @@ def run_spike_experiment(arguments, base_environment, logger) -> None:
         marker = json.loads((result_root / f"{case}.complete.json").read_text())
         if marker["selection_sha256"] != selection_digest:
             raise ValueError(f"Selection mismatch in {case}.")
-        verify_first_approach_outputs(["all_combined"], spike_run=run_id, spike_case=case)
+        verify_first_approach_outputs(["all_combined"], spike_run=run_id, spike_case=case, spike_chain=spike_chain)
     claim("finalize")
-    summarize_experiment(result_root, figure_root, cases)
+    summarize_experiment(result_root, figure_root, cases, chain=spike_chain)
     temporary_archive = archive.with_suffix(".tmp.zip")
     with zipfile.ZipFile(temporary_archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         for path in sorted(figure_root.rglob("*")):
@@ -624,10 +658,11 @@ def main() -> int:
     parser.add_argument("--clonoset-index", type=Path)
     parser.add_argument("--working-dir", type=Path)
     parser.add_argument("--mode", choices=("standard", "spike-in"), default="standard")
-    parser.add_argument("--spike-v-gene", help="Optional exact noncandidate TRAV annotation.")
+    parser.add_argument("--spike-chain", choices=("TRA", "TRB"), default="TRA")
+    parser.add_argument("--spike-v-gene", help="Optional exact noncandidate V annotation.")
     parser.add_argument("--spike-clones", type=int, default=10)
     parser.add_argument("--spike-fractions", default="0.0001,0.001,0.01",
-                        help="Added family UMI fractions of each original g1 sample library.")
+                        help="Comma-separated added UMI fractions, or 'article' for the manuscript dose grid.")
     parser.add_argument("--spike-max-g1-fraction", type=float, default=1e-5)
     parser.add_argument("--spike-seed", type=int, default=1031)
     parser.add_argument("--spike-run-id", help="Fresh output identifier; otherwise use a timestamp.")
@@ -644,6 +679,8 @@ def main() -> int:
         parser.error("--spike-stage requires --mode spike-in")
 
     root = repo_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
     selected_approaches = resolve_sequence(arguments.approach)
     selected_strata = resolve_strata(arguments.strata)
     base_environment = _base_environment(arguments)

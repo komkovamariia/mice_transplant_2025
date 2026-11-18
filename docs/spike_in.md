@@ -1,6 +1,6 @@
 # Spike-in sensitivity protocol
 
-The spike-in experiment measures how an added TRA family moves through the Approach 1 pipeline in the `all_combined` stratum. It is a computational sensitivity test on observed count matrices. It is not an assay-wide limit of detection and does not assign antigen specificity or biological alloreactivity.
+The spike-in experiment measures how an added TRA or TRB family moves through the Approach 1 pipeline in the `all_combined` stratum. It is a computational sensitivity test on observed count matrices. It is not an assay-wide limit of detection and does not assign antigen specificity or biological alloreactivity.
 
 ## Baseline and target family
 
@@ -18,17 +18,17 @@ Segments already supported by positive baseline edgeR or Fisher evidence in the 
 Eligible family members must:
 
 1. be observed exact `(CDR3 amino-acid sequence, V segment)` keys;
-2. share the selected TRAV annotation;
+2. share the selected V annotation;
 3. be absent from g2, g4, g5 and g6;
 4. have baseline UMI frequency at most `1e-5` in every g1 sample.
 
-The default family size is 10. Selection prefers clonotypes absent from g1, so observed g3 clonotypes can supply g1-absent, control-absent keys. The default seed is 1031. The selected TRAV and aaV keys are fixed before any dose is run.
+The default family size is 10. Selection prefers clonotypes absent from g1, so observed g3 clonotypes can supply g1-absent, control-absent keys. The default seed is 1031. The selected V segment and aaV keys are fixed before any dose is run.
 
-If no family meets the requested criteria, the experiment stops after the baseline. It does not create synthetic sequences or swap in a different enriched TRAV.
+If no family meets the requested criteria, the experiment stops after the baseline. It does not create synthetic sequences or swap in a different enriched V segment.
 
 ## Dose definition
 
-For g1 sample `s`, let `L_s` be the original TRA UMI library size, `f` the requested family fraction and `K` the family size.
+For g1 sample `s`, let `L_s` be the original UMI library size for the selected chain, `f` the requested family fraction and `K` the family size.
 
 ```text
 B_s = floor(f * L_s + 0.5)
@@ -43,11 +43,11 @@ B_s / L_s
 B_s / (L_s + B_s)
 ```
 
-The sequential CLI defaults to `0.0001,0.001,0.01`, which correspond to 0.01%, 0.1% and 1% of the original g1 TRA library. These are family-level doses, not per-clonotype doses.
+The sequential CLI defaults to `0.0001,0.001,0.01`, which correspond to 0.01%, 0.1% and 1% of the original g1 library for the selected chain. These are family-level doses, not per-clonotype doses.
 
 Each dose starts from the same baseline. Original counts remain in place. At very small fractions, rounding can produce zero added UMI or fewer added UMI than selected clonotypes.
 
-All g1 libraries receive the same requested fraction. Control groups and TRB matrices are unchanged.
+All g1 libraries receive the same requested fraction. Control groups and the other chain are unchanged.
 
 ## Structural and differential branches
 
@@ -64,10 +64,10 @@ Every dose reruns the same retention, Fisher, edgeR, ranking and figure code as 
 | Question | Output |
 |---|---|
 | Are the selected aaV recovered in the g1 remainder? | Presence, remainder membership and recovery fraction per aaV |
-| Does the selected TRAV retain more unique aaV? | Remainder count and retention change |
+| Does the selected V segment retain more unique aaV? | Remainder count and retention change |
 | Does its g1 share increase? | Unique-aaV share and UMI share, with baseline differences |
 | Does edgeR recover the added family? | Tested status, logFC, FDR and number with logFC > 0 and FDR < 0.05 |
-| Does the TRAV move in the final ranking? | Rank, rank improvement and entry from an unranked baseline |
+| Does the V segment move in the final ranking? | Rank, rank improvement and entry from an unranked baseline |
 
 The structural article score is recomputed as:
 
@@ -106,6 +106,8 @@ audit_runs/spike_in/<run_id>/
 logs/spike_in/<run_id>/
 ```
 
-The baseline directory contains the matrix snapshots and selection files. Each dose directory contains `spike_dose_by_sample.csv`, `spike_clonotype_recovery.csv` and `spike_metrics.json`. The run root contains `spike_in_summary.csv`, `sensitivity_bounds.json` and the final conclusion file.
+The baseline directory contains the matrix snapshots and the rarefied remainder used to measure baseline recovery. The run root contains the frozen selection. Each dose directory contains `spike_dose_by_sample.csv`, `spike_clonotype_recovery.csv` and `spike_metrics.json`. The run root contains `spike_in_summary.csv`, `sensitivity_bounds.json` and the final conclusion file.
 
 For Slurm execution, see [aldan3_parallel.md](aldan3_parallel.md). The scheduler default uses 16 fractions from `1e-7` to `0.01`, corresponding to 0.00001% through 1%. Scheduling changes how cases are launched, not how they are analyzed.
+
+Use `--spike-fractions article` (Slurm: `--fractions article`) for the 19 manuscript doses through 10%. Select the receptor chain with `--spike-chain` (Slurm: `--chain`). The four-panel PNG is generated automatically after all doses finish.

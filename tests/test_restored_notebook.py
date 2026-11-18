@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from scripts import run_analysis
+from src.article_figures import ARTICLE_FIGURES, article_name, bubble_candidates
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +26,7 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "deseq" not in joined.lower()
     assert all(not cell.get("outputs") for cell in code_cells)
     assert all(cell.get("execution_count") is None for cell in code_cells)
-    assert joined.count("plt.show(") >= 10
+    assert "_render_article(fig, chain, panel)" in joined
     assert "plt.savefig = _article_savefig" in joined
     assert "plt.show = _article_show" in joined
     assert "sns.set_theme(style=\"white\"" in joined
@@ -35,7 +36,7 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "downsample_group_tables(" in joined
     assert 'globals()[f"raw_ct_{group}_aaV_tra"]' in joined
     assert 'globals()[f"ct_{group}_aaV_tra"]' in joined
-    assert 'globals()[f"raw_ct_{group}_aaV_tra"] for group in ("g1", "g2", "g5", "g6")' in joined
+    assert "prepare_counts(_tables_for_chain(chain, raw=True)" in joined
     assert "RAREFACTION_SEEDS" in joined
     assert "BALANCE_SEEDS" in joined
     assert "RAREFACTION_SEEDS = tuple(range(1201, 1301))" in joined
@@ -44,26 +45,16 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert "top10_profile_distance_to_median" in joined
     assert "spike_in_used_for_selection" in joined
     assert "TRA_g1_top10_only_g1_stability.png" in joined
-    assert "V segments ordered by decreasing structural score S(v)" in joined
     assert 'profile["score_s"] = (' in joined
     assert 'profile["retention_score"] = profile["score_s"]' in joined
-    assert '["score_s", full_freq_col, "retained_cdr3_share_pct", "v"]' in joined
-    assert "top_n_labels=7" in joined
-    assert "top_n_heatmap=10" in joined
-    assert 'plot_df.sort_values(\n            ["100", "score_s", "v"]' in joined
     assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
-    assert "_adaptive_annotation_color" in joined
-    assert "def plot_v_region_heatmap(" not in joined
-    assert joined.count(
-        'save_path=str(FIGURE_DIR / "TRA_g1_v_segment_localization.png")'
-    ) == 1
-    assert joined.count(
-        'save_path=str(FIGURE_DIR / "TRB_g1_v_segment_localization.png")'
-    ) == 1
-    assert 'region_order = ["100", "110", "101", "111"]' in joined
+    assert 'output_dir = output_dir / "surplus"' in joined
+    assert '_render_structural_figures(g1_profile, "TRA")' in joined
+    assert '_render_structural_figures(g1_profile, "TRB")' in joined
+    assert '_render_article(plot_subsets(profiles, chain), chain, "cd4_cd8")' in joined
+    assert '_render_article(plot_depth_check(depth, chain, DOWNSAMPLE_DEPTH), chain, "depth")' in joined
+    assert '_render_article(plot_mds(points, chain, DOWNSAMPLE_DEPTH), chain, "mds")' in joined
     assert "np.log2(len(target_region_order))" in joined
-    assert "min_full_freq_pct=0.6" in joined
-    assert "min_retained_pct=66" in joined
     assert "impact_score" not in joined
     assert "specific_score" not in joined
     assert 'groups = ["g1", "g5"]' in joined
@@ -82,11 +73,7 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
         for group in ("g1", "g2", "g3", "g4", "g5", "g6"):
             assert f"set(ct_{group}_aaV_{chain}.index)" in joined
             assert f"set(ct_{group}_aaV_{chain})" not in joined
-    assert "plt.subplots(1, 2" not in joined
-    assert "plt.subplots(2, 2" not in joined
-    assert "TRA g1: V-segment representation before and after background subtraction" in joined
-    assert "TRA g1: V-segment localization across g1-containing overlap regions" in joined
-    assert "TRA g1: Fisher and edgeR effect concordance" in joined
+    assert 'differential_chains = ("TRA", "TRB") if STRATUM == "all_combined"' in joined
 
 
 def _load_notebook_function(function_name):
@@ -112,7 +99,6 @@ def _load_notebook_function(function_name):
 def test_article_score_and_entropy_use_retention_and_four_g1_regions():
     make_v_region_summary = _load_notebook_function("make_v_region_summary")
     make_v_profile = _load_notebook_function("make_v_profile")
-    select_bubble_genes = _load_notebook_function("get_bubble_labeled_v_genes")
     make_v_profile.__globals__["make_v_region_summary"] = make_v_region_summary
     intersection = pd.DataFrame(
         {
@@ -143,15 +129,17 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
 
     candidates = pd.DataFrame(
         {
-            "v": ["TRAV-low-share", "TRAV-middle", "TRAV-top"],
-            "score_s": [0.99, 0.20, 0.30],
-            "retained_cdr3_share_pct": [100.0, 70.0, 80.0],
-            "cdr3_in_full_g1": [10, 10, 10],
-            "frequency_in_full_g1_pct": [0.5, 1.0, 2.0],
+            "v": ["TRAV-low-share", "TRAV-low-retention", "TRAV-middle", "TRAV-top"],
+            "score_s": [0.99, 0.90, 0.20, 0.30],
+            "retained_cdr3_share_pct": [100.0, 65.0, 66.0, 80.0],
+            "cdr3_in_full_g1": [10, 10, 10, 10],
+            "frequency_in_full_g1_pct": [0.5, 5.0, 0.6, 2.0],
+            "region_entropy": [0.5, 0.4, 0.3, 0.2],
         }
     )
-    selected_genes, _ = select_bubble_genes(candidates, "g1", top_n=2)
-    assert selected_genes == ["TRAV-top", "TRAV-middle"]
+    displayed, labeled = bubble_candidates(candidates, limit=2)
+    assert len(displayed) == 4
+    assert labeled["v"].tolist() == ["TRAV-top", "TRAV-middle"]
 
 
 
@@ -317,11 +305,12 @@ def test_output_verification_rejects_missing_stratum_artifacts(tmp_path, monkeyp
         run_analysis.verify_first_approach_outputs(["cd4_thymus"])
 
 
-def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeypatch):
+@pytest.mark.parametrize("stratum", ["cd4_thymus", "all_combined"])
+def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeypatch, stratum):
     monkeypatch.setattr(run_analysis, "repo_root", lambda: tmp_path)
-    stem = run_analysis.STRATUM_BY_KEY["cd4_thymus"]
-    result_dir = tmp_path / "results" / "01_set_count" / "cd4_thymus"
-    figure_dir = tmp_path / "figures" / "01_set_count" / "cd4_thymus"
+    stem = run_analysis.STRATUM_BY_KEY[stratum]
+    result_dir = tmp_path / "results" / "01_set_count" / stratum
+    figure_dir = tmp_path / "figures" / "01_set_count" / stratum
     audit_dir = tmp_path / "audit_runs"
     log_dir = tmp_path / "logs"
     for directory in (result_dir, figure_dir, audit_dir, log_dir):
@@ -331,7 +320,8 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
     (log_dir / f"{stem}.log").write_text("complete\n", encoding="utf-8")
     (result_dir / "run_summary.json").write_text(
         json.dumps(
-            {"edger_status": "edgeR quasi-likelihood model fitted successfully."}
+            {"edger_status": "edgeR quasi-likelihood model fitted successfully.",
+             "edger_status_by_chain": {"TRB": "edgeR quasi-likelihood model fitted successfully."}}
         )
         + "\n",
         encoding="utf-8",
@@ -341,22 +331,34 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
         "v_gene\nTRAV1\n", encoding="utf-8"
     )
     manifest_rows = []
+    panels = ["localization"]
+    if stratum == "all_combined":
+        panels = [panel for panel in ARTICLE_FIGURES if panel != "spike_in"]
+        for name in (
+            "representative_downsampling_seed.json", "tra_rarefaction_seed_summary.csv",
+            "tra_rarefaction_v_profiles.csv", "tra_top10_only_g1_by_seed.csv",
+            "tra_top10_only_g1_summary.csv", "trbv_ranking.csv", "distinctive_trbv.csv",
+            "tra_depth_check.csv", "trb_depth_check.csv", "tra_mds_coordinates.csv", "trb_mds_coordinates.csv",
+        ):
+            (result_dir / name).write_text("test\n", encoding="utf-8")
     for chain in ("TRA", "TRB"):
-        chain_dir = figure_dir / chain
-        chain_dir.mkdir(parents=True, exist_ok=True)
-        png = chain_dir / f"{chain}_g1_v_segment_localization.png"
-        png.write_bytes(b"png")
-        manifest_rows.append(
-            {
-                "chain": chain,
-                "png": str(png.relative_to(tmp_path)),
-            }
-        )
+        names = [figure_dir / chain / article_name(chain, panel) for panel in panels]
+        if stratum == "all_combined":
+            extra = figure_dir / chain / "surplus"
+            names += [extra / f"{chain}_g1_{stem}.png" for stem in (
+                "rarefaction_stability", "balanced_mouse_stability",
+            )]
+            if chain == "TRA":
+                names.append(extra / "TRA_g1_top10_only_g1_stability.png")
+        for png in names:
+            png.parent.mkdir(parents=True, exist_ok=True)
+            png.write_bytes(b"png")
+            manifest_rows.append({"chain": chain, "png": str(png.relative_to(tmp_path))})
     pd.DataFrame(manifest_rows).to_csv(
         result_dir / "figure_manifest.csv", index=False
     )
 
-    run_analysis.verify_first_approach_outputs(["cd4_thymus"])
+    run_analysis.verify_first_approach_outputs([stratum])
 
 
 def test_output_verification_rejects_an_unfitted_edger_model(tmp_path, monkeypatch):

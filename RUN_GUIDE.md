@@ -151,7 +151,16 @@ python scripts/run_analysis.py --mode spike-in \
   --spike-seed 1031
 ```
 
-An exact V segment can be requested with `--spike-v-gene`. Selection still checks the baseline eligibility rules. Use a new run ID for a new experiment.
+Use the manuscript dose grid to generate the four-panel sensitivity figure for both chains:
+
+```bash
+python scripts/run_analysis.py --mode spike-in --strata all_combined \
+  --spike-run-id article_tra --spike-chain TRA --spike-v-gene TRAV8N-2 --spike-fractions article
+python scripts/run_analysis.py --mode spike-in --strata all_combined \
+  --spike-run-id article_trb --spike-chain TRB --spike-fractions article
+```
+
+An exact V segment requested with `--spike-v-gene` must satisfy the baseline eligibility rules. With no explicit gene, selection uses the baseline and seed. Slurm preparation accepts `--chain TRB` and `--fractions article`. Use a fresh run ID for each experiment. See [figures/README.md](figures/README.md) for the figure filenames and `surplus` layout.
 
 Results are written under `results/01_spike_in/<run_id>/`; executed notebooks and logs use `audit_runs/spike_in/<run_id>/` and `logs/spike_in/<run_id>/`. The protocol and output definitions are in [docs/spike_in.md](docs/spike_in.md).
 

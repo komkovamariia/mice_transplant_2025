@@ -52,6 +52,9 @@ PYTHON_FILES = [
     ROOT / "src/reporting.py",
     ROOT / "src/first_pass_input.py",
     ROOT / "src/figures.py",
+    ROOT / "src/article_figures.py",
+    ROOT / "src/repertoire_depth.py",
+    ROOT / "src/differential_abundance.py",
     ROOT / "src/spike_in.py",
     ROOT / "scripts/run_analysis.py",
     ROOT / "scripts/validate_repository.py",
@@ -214,11 +217,11 @@ def _validate_primary_notebook() -> None:
         "plot_double_triple_venn_like",
         "compare_full_vs_remaining_after_subtractions",
         "make_clone_intersection_table_venn3",
-        "plot_v_landscape",
+        "plot_retention",
         "compare_tra_trb_from_count_tables",
         "compute_pairwise_clone_umi_correlations",
-        "fisher_exact",
-        "glmQLFit",
+        "fit_fisher",
+        "fit_edger",
         "MICE_TCR_STRATUM",
         "_persist_open_figures",
         "figure_manifest.csv",
@@ -233,10 +236,10 @@ def _validate_primary_notebook() -> None:
             "an excluded differential-expression implementation is still present "
             "in venn_original.ipynb"
         )
-    if joined.count("plt.show(") < 10:
+    if "def _render_article(" not in joined:
         fail("venn_original.ipynb is missing required figure calls")
     required_figure_scope = (
-        'region_order = ["100", "110", "101", "111"]',
+        'target_region_order = ["100", "110", "101", "111"]',
         "np.log2(len(target_region_order))",
         "retention_score",
         "TRA_g1_v_segment_localization.png",

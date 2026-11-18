@@ -82,12 +82,16 @@ def validate_resources(args: argparse.Namespace) -> None:
 
 def prepare(args: argparse.Namespace) -> Path:
     from scripts.run_analysis import analysis_fingerprint
+    from src.spike_in import ARTICLE_FRACTIONS
 
     validate_resources(args)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.run_id):
         raise ValueError("Invalid run ID.")
 
-    fractions = sorted(set(float(value) for value in args.fractions.split(",")))
+    fractions = (
+        list(ARTICLE_FRACTIONS) if args.fractions == "article"
+        else sorted(set(float(value) for value in args.fractions.split(",")))
+    )
     if not fractions or any(
         not math.isfinite(value) or not 0 < value < 1 for value in fractions
     ):
@@ -114,6 +118,7 @@ def prepare(args: argparse.Namespace) -> Path:
         "--mode", "spike-in",
         "--strata", "all_combined",
         "--spike-run-id", args.run_id,
+        "--spike-chain", getattr(args, "chain", "TRA"),
         "--spike-clones", str(args.clones),
         "--spike-seed", str(args.seed),
         "--spike-fractions", ",".join(str(value) for value in fractions),
@@ -413,6 +418,7 @@ def main() -> None:
     )
     prepare_parser.add_argument("--clones", type=int, default=10)
     prepare_parser.add_argument("--seed", type=int, default=1031)
+    prepare_parser.add_argument("--chain", choices=("TRA", "TRB"), default="TRA")
     prepare_parser.add_argument("--v-gene")
     for name in ("data-dir", "metadata-csv", "clonoset-index", "working-dir"):
         prepare_parser.add_argument(f"--{name}", type=Path)

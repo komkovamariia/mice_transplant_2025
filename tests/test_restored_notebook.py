@@ -1,5 +1,4 @@
 import ast
-import hashlib
 import json
 import re
 from pathlib import Path
@@ -18,7 +17,8 @@ from src.article_figures import (
     plot_retention,
     plot_subsets,
 )
-from src.v_thresholds import FIXED_THRESHOLDS, PlotThresholds, fit_plot_thresholds, mean_plot_thresholds
+from src.structural_sampling import downsample_count_table
+from src.v_thresholds import PlotThresholds, fit_mouse_dropout_thresholds, fit_plot_thresholds
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,12 +141,11 @@ def _load_notebook_function(function_name):
 
 
 @pytest.mark.parametrize("partial_panel", [False, True])
-def test_dropout_cutoffs_omit_whole_mice_and_weight_groups_equally(partial_panel):
-    plot_thresholds = _load_notebook_function("_plot_thresholds")
+def test_dropout_cutoffs_omit_whole_mice_and_weight_groups_equally(partial_panel, monkeypatch):
     group_sizes = {"g1": 2, "g2": 2, "g4": 2, "g5": 3, "g6": 4}
     group_cutoffs = {"g1": PlotThresholds(0.3, 60), "g5": PlotThresholds(0.6, 70),
                      "g6": PlotThresholds(1.2, 90)}
-    metadata, records = [], []
+    metadata = []
     cohort = {}
     for group, size in group_sizes.items():
         columns = []
@@ -162,8 +161,7 @@ def test_dropout_cutoffs_omit_whole_mice_and_weight_groups_equally(partial_panel
     if partial_panel:
         panels["g1"] = cohort["g1"].iloc[:, :4]
 
-    def summarize(held_out, *, include_regions):
-        assert not include_regions
+    def summarize(held_out):
         changed = [group for group in panels if held_out[group] is not panels[group]]
         assert len(changed) == 1
         group = changed[0]
@@ -173,17 +171,16 @@ def test_dropout_cutoffs_omit_whole_mice_and_weight_groups_equally(partial_panel
         share, retention = group_cutoffs[group]
         return {"initial_share": share / 100, "retention": retention / 100}
 
-    plot_thresholds.__globals__.update({
-        "V_THRESHOLD_MODE": "adaptive", "V_THRESHOLD_RECORDS": records, "metadata": pd.DataFrame(metadata),
-        "_structural_v_summary": summarize, "FIXED_THRESHOLDS": FIXED_THRESHOLDS,
-        "fit_plot_thresholds": PlotThresholds, "mean_plot_thresholds": mean_plot_thresholds,
-    })
-    result = plot_thresholds("TRA", "CD4+", panels, cohort_tables=cohort)
+    monkeypatch.setattr("src.structural_v.structural_summary", summarize)
+    monkeypatch.setattr("src.v_thresholds.fit_plot_thresholds", PlotThresholds)
+    result, records = fit_mouse_dropout_thresholds(panels, pd.DataFrame(metadata), cohort_tables=cohort)
     mice = [row for row in records if row["level"] == "mouse"]
     assert len(mice) == 9
     assert {row["omitted_group"] for row in mice} == {"g1", "g5", "g6"}
     if partial_panel:
-        assert result == FIXED_THRESHOLDS
+        assert result is None
+        assert records[-1]["initial_share_pct"] is None
+        assert records[-1]["retention_pct"] is None
         statuses = {row["status"] for row in mice if row["omitted_group"] == "g1"}
         assert statuses == {"no_panel_libraries", "skipped_empty_group"}
     else:
@@ -367,24 +364,6 @@ def test_figure_chain_detection_ignores_repository_name_and_routes_trb():
 
 
 def test_structural_downsampling_is_deterministic_and_excludes_low_depth_samples():
-    notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
-    source = "".join(next(cell for cell in notebook["cells"] if cell["id"] == "venn-inputs")["source"])
-    tree = ast.parse(source)
-    selected = [
-        node for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name in {"_stable_sample_seed", "downsample_count_table"}
-    ]
-    namespace = {
-        "np": __import__("numpy"),
-        "pd": pd,
-        "hashlib": hashlib,
-        "DOWNSAMPLE_DEPTH": 15000,
-        "DOWNSAMPLE_SEED": 1031,
-    }
-    exec(compile(ast.Module(body=selected, type_ignores=[]), "downsample_helpers", "exec"), namespace)
-    downsample = namespace["downsample_count_table"]
-
     index = pd.Index([("AAA", "TRAV1"), ("BBB", "TRAV2")], tupleize_cols=False)
     table = pd.DataFrame(
         {
@@ -393,8 +372,8 @@ def test_structural_downsampling_is_deterministic_and_excludes_low_depth_samples
         },
         index=index,
     )
-    first, audit_first = downsample(table, depth=15000, seed=1031)
-    second, audit_second = downsample(table, depth=15000, seed=1031)
+    first, audit_first = downsample_count_table(table, depth=15000, seed=1031)
+    second, audit_second = downsample_count_table(table, depth=15000, seed=1031)
 
     pd.testing.assert_frame_equal(first, second)
     pd.testing.assert_frame_equal(audit_first, audit_second)
@@ -403,7 +382,7 @@ def test_structural_downsampling_is_deterministic_and_excludes_low_depth_samples
     assert audit_first.set_index("sample_id").loc["shallow", "kept_for_structural_analysis"] == False
 
     with pytest.raises(ValueError, match="No sample reached"):
-        downsample(
+        downsample_count_table(
             table,
             depth=15000,
             seed=1031,

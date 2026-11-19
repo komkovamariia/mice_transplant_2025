@@ -144,9 +144,13 @@ def execute_notebook(
     *,
     environment: dict[str, str],
     resume: bool,
+    cell_ids: tuple[str, ...] | None = None,
 ) -> Path:
     root = repo_root()
     notebook = nbformat.read(notebook_path, as_version=4)
+    if cell_ids is not None:
+        cells = {cell.id: cell for cell in notebook.cells}
+        notebook.cells = [cells[cell_id] for cell_id in cell_ids]
     output = root / "audit_runs" / f"{artifact_stem}.executed.ipynb"
     log_path = root / "logs" / f"{artifact_stem}.log"
     logger = Logger(log_path)
@@ -665,7 +669,8 @@ def main() -> int:
     parser.add_argument("--working-dir", type=Path)
     parser.add_argument("--mode", choices=("standard", "spike-in"), default="standard")
     parser.add_argument("--v-thresholds", choices=("fixed", "adaptive"), default="fixed",
-                        help="Fit exploratory V-segment plot cutoffs in a separate Approach 1 run.")
+                        help="Update only V-segment figures from cached structural inputs.")
+    parser.add_argument("--v-baseline-results", type=Path, help="Existing stratum directory for adaptive figure updates.")
     parser.add_argument("--spike-chain", choices=("TRA", "TRB"), default="TRA")
     parser.add_argument("--spike-v-gene", help="Optional exact noncandidate V annotation.")
     parser.add_argument("--spike-clones", type=int, default=10)
@@ -694,7 +699,16 @@ def main() -> int:
     adaptive = arguments.v_thresholds == "adaptive"
     if adaptive and (arguments.mode != "standard" or selected_approaches != ["1"]):
         parser.error("--v-thresholds adaptive requires a standard Approach 1 run")
-    output_name = "01_set_count_adaptive" if adaptive else "01_set_count"
+    if adaptive:
+        from scripts.run_v_updates import prepare_if_missing, update_threshold_figures
+
+        if arguments.v_baseline_results is not None and len(selected_strata) != 1:
+            parser.error("--v-baseline-results requires exactly one stratum")
+        for stratum in selected_strata:
+            prepare_if_missing(root, stratum, arguments.v_baseline_results, _base_environment(arguments))
+            update_threshold_figures(root, stratum)
+        return 0
+    output_name = "01_set_count"
     base_environment = _base_environment(arguments)
     if arguments.mode == "spike-in" and arguments.spike_stage != "all":
         sys.path.insert(0, str(root))
@@ -703,7 +717,7 @@ def main() -> int:
         suffix = f"_{arguments.spike_dose_index}" if arguments.spike_stage == "dose" else ""
         pipeline_log = root / "logs" / "spike_driver" / run_id / f"{arguments.spike_stage}{suffix}.log"
     else:
-        pipeline_log = root / "logs" / output_name / "pipeline.log" if adaptive else root / "logs" / "pipeline.log"
+        pipeline_log = root / "logs" / "pipeline.log"
     pipeline_logger = Logger(pipeline_log)
     pipeline_logger.write(
         "PIPELINE START | approaches="
@@ -722,8 +736,6 @@ def main() -> int:
                 prepare_first_approach_output_directories(selected_strata, output_name=output_name)
                 for stratum_position, stratum in enumerate(selected_strata, start=1):
                     stem = STRATUM_BY_KEY[stratum]
-                    if adaptive:
-                        stem = f"{output_name}/{stem}"
                     final_complete_run = (
                         set(selected_strata) == set(STRATUM_BY_KEY)
                         and stratum_position == len(selected_strata)

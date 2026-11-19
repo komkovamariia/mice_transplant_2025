@@ -101,6 +101,8 @@ def _title(ax, title, size=13, pad=5):
 
 
 def eligible_segments(profile, thresholds=FIXED_THRESHOLDS):
+    if thresholds is None:
+        return profile.iloc[:0]
     return profile.loc[
         profile[SHARE_COLUMN].ge(thresholds.initial_share_pct)
         & profile[RETENTION_COLUMN].ge(thresholds.retention_pct)
@@ -121,7 +123,8 @@ def plot_dumbbell(profile, chain, suffix="", *, thresholds=FIXED_THRESHOLDS):
     ax.set_ylabel(f"{chain} V segment", fontsize=10)
     ax.yaxis.set_label_coords(-0.172, 0.5)
     if rows.empty:
-        empty_axis(ax, "No V segments met both selection thresholds.")
+        empty_axis(ax, "Adaptive cutoffs unavailable." if thresholds is None
+                   else "No V segments met both selection thresholds.")
         return fig
     y = np.arange(len(rows))
     retained = rows["frequency_remaining_in_g1_pct_relative_to_original"]
@@ -159,8 +162,12 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
         fontsize=size, labelpad=6,
     )
     ax.set_ylabel("Retention after subtraction (%)", fontsize=size, labelpad=3)
-    ax.axvline(thresholds.initial_share_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
-    ax.axhline(thresholds.retention_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
+    if thresholds is not None:
+        ax.axvline(thresholds.initial_share_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
+        ax.axhline(thresholds.retention_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
+    else:
+        ax.text(0.98, 0.04, "Adaptive cutoffs unavailable", transform=ax.transAxes,
+                ha="right", fontsize=size)
     if rows.empty:
         empty_axis(ax, "No V segments were available.")
         color_axis.set_axis_off()
@@ -172,8 +179,13 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
         s=(22 + 302 * rows[COUNT_COLUMN] / rows[COUNT_COLUMN].max()) * (0.60 if compact else 1),
         alpha=0.74, edgecolors="face", linewidths=0.35, zorder=2,
     )
-    ax.set_xlim(0, max(thresholds.initial_share_pct * 1.2, rows[SHARE_COLUMN].max() * 1.12))
-    ax.set_ylim(max(0, min(13, thresholds.retention_pct, rows[RETENTION_COLUMN].min() - 4)), 108)
+    x_upper = rows[SHARE_COLUMN].max() * 1.12
+    y_lower = min(13, rows[RETENTION_COLUMN].min() - 4)
+    if thresholds is not None:
+        x_upper = max(x_upper, thresholds.initial_share_pct * 1.2)
+        y_lower = min(y_lower, thresholds.retention_pct)
+    ax.set_xlim(0, x_upper)
+    ax.set_ylim(max(0, y_lower), 108)
     colorbar = fig.colorbar(points, cax=color_axis)
     colorbar.solids.set_alpha(1)
     colorbar.outline.set_linewidth(0.65)
@@ -233,7 +245,8 @@ def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, co
     rows = rows.reindex(columns=["v", "score_s", *REGIONS])
     rows = rows.fillna({column: 0.0 for column in REGIONS})
     if rows.empty:
-        empty_axis(ax, "No V segments passed both retention thresholds.")
+        empty_axis(ax, "Adaptive cutoffs unavailable." if thresholds is None
+                   else "No V segments passed both retention thresholds.")
         color_axis.set_axis_off()
         return
     rows = rows.sort_values(["100", "score_s", "v"], ascending=[False, False, True])

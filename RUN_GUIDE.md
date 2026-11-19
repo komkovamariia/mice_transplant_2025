@@ -37,10 +37,22 @@ To fit exploratory V-segment plot cutoffs for each chain and panel:
 python scripts/run_analysis.py --approach 1 --strata all_combined --v-thresholds adaptive
 ```
 
-The fit finds two splits by maximizing between-class variance. It splits the
-log10 initial share first, then splits retention among the V segments above
-that share cutoff. Each side of a split needs at least two segments. The
-initial-share split leaves at least four segments for the retention split.
+This command refreshes the retention, dumbbell and localization figures for
+TRA and TRB, including the CD4/CD8 composite for `all_combined`. It reuses
+the previous run's depth and structural seed and saves the input count
+snapshots on first use. Preparation sorts aaV before rarefaction so future
+updates are reproducible. Legacy runs that sampled in hash-dependent row order
+can have a different rarefaction draw at the same seed. Use `--v-baseline-results PATH` to select the directory
+containing the previous run's `run_summary.json`. This update skips the
+count tests, MDS, spike-in and seed search. To rebuild the snapshots after
+changing input data, use `python scripts/run_v_updates.py prepare` with
+`--baseline-results` and any required input path overrides.
+
+The Otsu criterion maximizes between-class variance. The fit splits the
+log10 initial share first, then splits retention for the segments above
+that share cutoff. Each side of a split needs at least two segments.
+The initial-share split leaves at least four segments for the retention
+split. The cutoffs describe the observed distribution.
 
 The run starts each fit from the full set of downsampled libraries and omits
 one mouse from g1, g5 or g6, including all its organs and cell subsets.
@@ -49,7 +61,9 @@ skipped if the mouse has no libraries in that panel or its removal would
 empty its group. The group cutoffs are arithmetic means of valid fits in
 percentage units. The dashed lines are the arithmetic mean of the three
 group means, giving all three groups equal weight. If a group has no
-valid fit, the panel uses the fixed 0.6% and 70% defaults.
+valid fit, the final cutoffs are blank in the CSV. The bubble plot shows
+the measured points without cutoffs or candidate labels. The corresponding
+dumbbell and localization panels mark the selection as unavailable.
 
 Read the mouse, group and final rows in
 `results/01_set_count_adaptive/all_combined/v_thresholds.csv` for the fitted
@@ -58,6 +72,41 @@ use the full-panel data with the aggregated cutoffs.
 Figures and the archive go to `figures/01_set_count_adaptive/` and
 `figures/01_set_count_adaptive.zip`. Standard outputs and spike-in settings
 use the fixed mode.
+
+### Exploratory calibration of Equation 7
+
+After preparing the `all_combined` inputs:
+
+```bash
+python scripts/run_v_updates.py evidence
+python scripts/run_v_updates.py weights --top 10 --ridge 0.1
+```
+
+The evidence stage uses a fixed rarefaction seed and excludes each mouse
+from g1, g5 or g6 in turn. It retains the existing raw-UMI edgeR and Fisher
+definitions and fits those tests only on the remaining mice. The structural
+term counts unique aaV left after excluding g2, g4, g5 and g6. Within each
+fold, the shortlist is ordered by the fraction of the V segment's g1 UMI
+burden in `g1 only` relative to g5 and g6. Ties use the number of distinct
+aaV with that V segment, then the segment name.
+
+For each shortlisted V segment, the response is the fraction of distinct
+aaV with that V segment on the omitted mouse that also occur in the
+training `g1 only` set. Responses are positive for omitted g1 mice and
+negative for omitted g5 and g6 mice. Rows with no observations for that
+V segment on the omitted mouse are excluded from the fit. The fit uses
+nonnegative ridge regression with standardized predictors and equal total
+weight for each group, equal weight per usable mouse within a group and
+equal weight per observed top V segment within a mouse.
+
+The weights stage reuses fold evidence when changing `--top` or `--ridge`.
+It writes separate coefficients and contributions for TRA and TRB to
+`results/01_v_update_inputs/all_combined/eq7_weights/`. The scored shortlist
+uses the saved full-cohort edgeR and Fisher verdicts and the same fixed
+rarefaction as the evidence stage. The calibration CSVs retain each
+mouse's response and regression weight. These data provide internal
+calibration for repertoire recurrence. An independent cohort would be
+needed to estimate out-of-sample performance.
 
 Available keys:
 

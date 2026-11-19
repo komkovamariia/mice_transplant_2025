@@ -31,6 +31,28 @@ python scripts/run_analysis.py --approach 1 \
   --strata all_combined,cd4_combined,cd8_combined
 ```
 
+To fit exploratory V-segment plot cutoffs for each chain and panel:
+
+```bash
+python scripts/run_analysis.py --approach 1 --strata all_combined --v-thresholds adaptive
+```
+
+The fit finds two splits by maximizing between-class variance. It splits the
+log10 initial share first, then splits retention among the V segments above
+that share cutoff. Each side of a split needs at least two segments. The
+initial-share split leaves at least four segments for the retention split.
+Degenerate fits use the fixed 0.6% and 70% defaults and record the fallback.
+
+The full-panel fit sets the two plotted cutoffs. The run also refits them
+after omitting each mouse and all its libraries from its structural group in
+turn. Groups with only one eligible mouse are recorded as skipped. Read both
+the full-data and leave-one-mouse-out rows in
+`results/01_set_count_adaptive/all_combined/v_thresholds.csv`. These cutoffs
+are descriptive. The leave-one-out fits measure sensitivity to mouse removal.
+Figures and the archive go to `figures/01_set_count_adaptive/` and
+`figures/01_set_count_adaptive.zip`. Standard outputs and spike-in settings
+use the fixed mode.
+
 Available keys:
 
 ```text

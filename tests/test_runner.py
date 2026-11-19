@@ -86,6 +86,27 @@ def test_prepare_and_archive_first_approach_outputs(tmp_path, monkeypatch):
         assert archive.namelist() == ["01_set_count/cd8_thymus/retained.png"]
 
 
+def test_adaptive_outputs_preserve_fixed_results(tmp_path, monkeypatch):
+    monkeypatch.setattr("scripts.run_analysis.repo_root", lambda: tmp_path)
+    fixed = tmp_path / "figures" / "01_set_count.zip"
+    fixed.parent.mkdir()
+    fixed.write_bytes(b"fixed")
+    result = tmp_path / "results" / "01_set_count" / "all_combined" / "summary.csv"
+    result.parent.mkdir(parents=True)
+    result.write_text("fixed\n")
+    adaptive = tmp_path / "figures" / "01_set_count_adaptive" / "all_combined"
+    adaptive.mkdir(parents=True)
+
+    prepare_first_approach_output_directories(["all_combined"], output_name="01_set_count_adaptive")
+    assert not adaptive.exists()
+    adaptive.mkdir()
+    (adaptive / "plot.png").write_bytes(b"adaptive")
+    archive = archive_first_approach_figures(output_name="01_set_count_adaptive")
+    assert archive.name == "01_set_count_adaptive.zip"
+    assert fixed.read_bytes() == b"fixed"
+    assert result.read_text() == "fixed\n"
+
+
 def test_publication_figure_output_is_png_only_and_chain_specific(tmp_path, monkeypatch):
     monkeypatch.setattr("src.figures.repository_root", lambda: tmp_path)
     fig, ax = plt.subplots(figsize=(4, 3))

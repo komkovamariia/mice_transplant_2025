@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MaxNLocator
 
+from .v_thresholds import FIXED_THRESHOLDS
 from .figures import CORAL, MAGENTA, PURPLE, THRESHOLD_BLUE
 
 
@@ -36,8 +37,6 @@ ARTICLE_FIGURES = {
     "cd4_cd8": "cd4_cd8_structure",
 }
 ARTICLE_FONTS = ["Arial", "Liberation Sans", "DejaVu Sans"]
-INITIAL_SHARE = 0.6
-RETENTION = 70
 REGIONS = {
     "100": "g1 only",
     "110": "g1 ∩ g5\nwithout g6",
@@ -101,14 +100,15 @@ def _title(ax, title, size=13, pad=5):
     ax.set_title(title, fontsize=size, fontweight="normal", pad=pad)
 
 
-def eligible_segments(profile):
+def eligible_segments(profile, thresholds=FIXED_THRESHOLDS):
     return profile.loc[
-        profile[SHARE_COLUMN].ge(INITIAL_SHARE) & profile[RETENTION_COLUMN].ge(RETENTION)
+        profile[SHARE_COLUMN].ge(thresholds.initial_share_pct)
+        & profile[RETENTION_COLUMN].ge(thresholds.retention_pct)
     ]
 
 
-def plot_dumbbell(profile, chain, suffix=""):
-    rows = eligible_segments(profile).sort_values(
+def plot_dumbbell(profile, chain, suffix="", *, thresholds=FIXED_THRESHOLDS):
+    rows = eligible_segments(profile, thresholds).sort_values(
         SCORE_COLUMNS, ascending=[False, False, False, True],
     ).head(20)
     fig = article_canvas("dumbbell")
@@ -134,18 +134,18 @@ def plot_dumbbell(profile, chain, suffix=""):
     return fig
 
 
-def bubble_candidates(profile, limit):
+def bubble_candidates(profile, limit, thresholds=FIXED_THRESHOLDS):
     plotted = profile.dropna(subset=SCORE_COLUMNS + [COUNT_COLUMN, "region_entropy"])
     plotted = plotted.loc[plotted[COUNT_COLUMN].gt(0) & plotted[SHARE_COLUMN].gt(0)]
-    eligible = eligible_segments(plotted)
+    eligible = eligible_segments(plotted, thresholds)
     selected = eligible.sort_values(SCORE_COLUMNS, ascending=[False, False, False, True]).head(limit)
     return plotted, selected
 
 
-def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False):
+def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thresholds=FIXED_THRESHOLDS):
     from adjustText import adjust_text
 
-    rows, selected = bubble_candidates(profile, 10 if compact else 11)
+    rows, selected = bubble_candidates(profile, 10 if compact else 11, thresholds)
     _ticks(ax, 7 if compact else 10, box=not compact)
     if compact:
         _ticks(color_axis, 6, box=True)
@@ -159,8 +159,8 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False):
         fontsize=size, labelpad=6,
     )
     ax.set_ylabel("Retention after subtraction (%)", fontsize=size, labelpad=3)
-    ax.axvline(INITIAL_SHARE, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
-    ax.axhline(RETENTION, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
+    ax.axvline(thresholds.initial_share_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
+    ax.axhline(thresholds.retention_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
     if rows.empty:
         empty_axis(ax, "No V segments were available.")
         color_axis.set_axis_off()
@@ -172,8 +172,8 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False):
         s=(22 + 302 * rows[COUNT_COLUMN] / rows[COUNT_COLUMN].max()) * (0.60 if compact else 1),
         alpha=0.74, edgecolors="face", linewidths=0.35, zorder=2,
     )
-    ax.set_xlim(0, max(INITIAL_SHARE * 1.2, rows[SHARE_COLUMN].max() * 1.12))
-    ax.set_ylim(max(0, min(13, rows[RETENTION_COLUMN].min() - 4)), 108)
+    ax.set_xlim(0, max(thresholds.initial_share_pct * 1.2, rows[SHARE_COLUMN].max() * 1.12))
+    ax.set_ylim(max(0, min(13, thresholds.retention_pct, rows[RETENTION_COLUMN].min() - 4)), 108)
     colorbar = fig.colorbar(points, cax=color_axis)
     colorbar.solids.set_alpha(1)
     colorbar.outline.set_linewidth(0.65)
@@ -206,17 +206,18 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False):
     return selected["v"].tolist()
 
 
-def plot_retention(profile, chain, stratum_title):
+def plot_retention(profile, chain, stratum_title, *, thresholds=FIXED_THRESHOLDS):
     fig = article_canvas("retention")
     ax = fig.add_axes((0.074, 0.110, 0.757, 0.844))
     color_axis = fig.add_axes((0.883, 0.110, 0.032, 0.844))
     genes = _retention_panel(
         fig, ax, color_axis, profile, f"{chain} g1: {stratum_title} V-segment retention",
+        thresholds=thresholds,
     )
     return fig, genes
 
 
-def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, compact=False):
+def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, compact=False, thresholds=FIXED_THRESHOLDS):
     size = 7 if compact else 10
     _ticks(ax, size)
     for spine in ax.spines.values():
@@ -228,7 +229,7 @@ def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, co
     ax.set_ylabel(f"{chain} V segment", fontsize=size, labelpad=7)
     if not compact:
         ax.yaxis.set_label_coords(-0.191, 0.5)
-    rows = eligible_segments(profile.loc[profile["v"].isin(genes)])
+    rows = eligible_segments(profile.loc[profile["v"].isin(genes)], thresholds)
     rows = rows.reindex(columns=["v", "score_s", *REGIONS])
     rows = rows.fillna({column: 0.0 for column in REGIONS})
     if rows.empty:
@@ -264,16 +265,16 @@ def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, co
         )
 
 
-def plot_localization(profile, genes, chain, suffix=""):
+def plot_localization(profile, genes, chain, suffix="", *, thresholds=FIXED_THRESHOLDS):
     fig = article_canvas("localization")
     ax = fig.add_axes((0.156, 0.148, 0.738, 0.794))
     color_axis = fig.add_axes((0.916, 0.148, 0.027, 0.794))
     title = f"{chain} g1: V-segment localization across g1-containing overlap regions{suffix}"
-    _localization_panel(fig, ax, color_axis, profile, genes, chain, title)
+    _localization_panel(fig, ax, color_axis, profile, genes, chain, title, thresholds=thresholds)
     return fig
 
 
-def plot_subsets(profiles, chain):
+def plot_subsets(profiles, chain, *, thresholds_by_subset=None):
     fig = article_canvas("cd4_cd8")
     fig.suptitle(f"{chain} g1: separate CD8+ and CD4+ structural analyses",
                  fontsize=15, fontweight="bold", y=0.987)
@@ -284,10 +285,11 @@ def plot_subsets(profiles, chain):
         heatmap = fig.add_axes((0.605, bottom, 0.319, 0.354))
         heatmap_color = fig.add_axes((0.939, bottom, 0.016, 0.354))
         profile = profiles[subset]
+        thresholds = (thresholds_by_subset or {}).get(subset, FIXED_THRESHOLDS)
         genes = _retention_panel(fig, bubble, bubble_color, profile,
-                                 f"{subset} V-segment retention", compact=True)
+                                 f"{subset} V-segment retention", compact=True, thresholds=thresholds)
         _localization_panel(fig, heatmap, heatmap_color, profile, genes, chain,
-                            f"{subset} overlap-region composition", compact=True)
+                            f"{subset} overlap-region composition", compact=True, thresholds=thresholds)
         panel_letter(bubble, "AC"[row], x=-0.067, y=1.09, fontsize=15)
         panel_letter(heatmap, "BD"[row], x=-0.275, y=1.10, fontsize=15)
     return fig

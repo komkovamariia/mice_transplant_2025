@@ -15,8 +15,10 @@ from src.article_figures import (
     bubble_candidates,
     plot_dumbbell,
     plot_localization,
+    plot_retention,
     plot_subsets,
 )
+from src.v_thresholds import fit_plot_thresholds
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,7 +61,7 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert 'output_dir = output_dir / "surplus"' in joined
     assert '_render_structural_figures(g1_profile, "TRA")' in joined
     assert '_render_structural_figures(g1_profile, "TRB")' in joined
-    assert '_render_article(plot_subsets(profiles, chain), chain, "cd4_cd8")' in joined
+    assert 'plot_subsets(profiles, chain, thresholds_by_subset=thresholds_by_subset)' in joined
     assert '_render_article(plot_depth_check(depth, chain, DOWNSAMPLE_DEPTH), chain, "depth")' in joined
     assert '_render_article(plot_mds(points, chain, DOWNSAMPLE_DEPTH), chain, "mds")' in joined
     assert "np.log2(len(target_region_order))" in joined
@@ -82,6 +84,40 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
             assert f"set(ct_{group}_aaV_{chain}.index)" in joined
             assert f"set(ct_{group}_aaV_{chain})" not in joined
     assert 'differential_chains = ("TRA", "TRB") if STRATUM == "all_combined"' in joined
+
+
+def test_adaptive_cutoffs_use_both_axes_and_require_two_segments_on_each_side():
+    shares = [0.01, 0.04, 1.0, 1.4, 1.7, 2.0, 3.0]
+    retention = [99, 99, 27, 36, 82, 86, 90]
+    thresholds = fit_plot_thresholds(shares, retention)
+    assert thresholds.initial_share_pct == pytest.approx(0.2)
+    assert thresholds.retention_pct == pytest.approx(59)
+    assert fit_plot_thresholds(shares, [70] * len(shares)) is None
+    assert fit_plot_thresholds([], []) is None
+
+    profile = pd.DataFrame({
+        "v": [f"TRAV{i}" for i in range(len(shares))],
+        "frequency_in_full_g1_pct": shares,
+        "retained_cdr3_share_pct": retention,
+        "frequency_remaining_in_g1_pct_relative_to_original": [
+            share * retained / 100 for share, retained in zip(shares, retention, strict=True)
+        ],
+        "score_s": [share * retained / 10000 for share, retained in zip(shares, retention, strict=True)],
+        "cdr3_in_full_g1": 100,
+        "region_entropy": 0.5,
+    })
+    bubble, genes = plot_retention(profile, "TRA", "test", thresholds=thresholds)
+    dumbbell = plot_dumbbell(profile, "TRA", thresholds=thresholds)
+    heatmap = plot_localization(profile, genes, "TRA", thresholds=thresholds)
+    try:
+        assert list(bubble.axes[0].lines[0].get_xdata()) == [thresholds.initial_share_pct] * 2
+        assert list(bubble.axes[0].lines[1].get_ydata()) == [thresholds.retention_pct] * 2
+        assert genes == ["TRAV6", "TRAV5", "TRAV4"]
+        assert [tick.get_text() for tick in dumbbell.axes[0].get_yticklabels()] == genes
+        assert {tick.get_text() for tick in heatmap.axes[0].get_yticklabels()} == set(genes)
+    finally:
+        for figure in (bubble, dumbbell, heatmap):
+            plt.close(figure)
 
 
 def _load_notebook_function(function_name):

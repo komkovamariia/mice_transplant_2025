@@ -287,12 +287,12 @@ def _base_environment(arguments) -> dict[str, str]:
     return environment
 
 
-def prepare_first_approach_output_directories(selected_strata: list[str]) -> None:
+def prepare_first_approach_output_directories(selected_strata: list[str], *, output_name="01_set_count") -> None:
     """Clear generated outputs for the selected Approach 1 strata."""
     root = repo_root()
-    figure_root = root / "figures" / "01_set_count"
-    result_root = root / "results" / "01_set_count"
-    archive_path = root / "figures" / "01_set_count.zip"
+    figure_root = root / "figures" / output_name
+    result_root = root / "results" / output_name
+    archive_path = figure_root.with_suffix(".zip")
     if archive_path.is_file():
         archive_path.unlink()
 
@@ -310,16 +310,16 @@ def prepare_first_approach_output_directories(selected_strata: list[str]) -> Non
                 shutil.rmtree(stratum_directory)
 
 
-def archive_first_approach_figures() -> Path:
+def archive_first_approach_figures(*, output_name="01_set_count") -> Path:
     """Archive the current Approach 1 figure directory."""
     root = repo_root()
-    figure_root = root / "figures" / "01_set_count"
+    figure_root = root / "figures" / output_name
     if not figure_root.is_dir():
         raise RuntimeError(
-            "Cannot archive Approach 1 figures because figures/01_set_count is missing."
+            f"Cannot archive Approach 1 figures because figures/{output_name} is missing."
         )
 
-    archive_path = root / "figures" / "01_set_count.zip"
+    archive_path = figure_root.with_suffix(".zip")
     temporary_path = archive_path.with_suffix(".zip.tmp")
     if temporary_path.exists():
         temporary_path.unlink()
@@ -337,6 +337,7 @@ def archive_first_approach_figures() -> Path:
 
 def verify_first_approach_outputs(
     selected_strata: list[str], *, spike_run=None, spike_case=None, spike_chain="TRA",
+    output_name="01_set_count",
 ) -> None:
     """Check the required outputs for completed Approach 1 strata."""
     from src.article_figures import ARTICLE_FIGURES, article_name
@@ -347,7 +348,12 @@ def verify_first_approach_outputs(
     prefix = report_chain.lower() + "v"
     for stratum in selected_strata:
         stem = STRATUM_BY_KEY[stratum]
-        result_dir = root / "results" / "01_set_count" / stratum
+        result_dir = root / "results" / output_name / stratum
+        if output_name == "01_set_count_adaptive":
+            stem = f"{output_name}/{stem}"
+            thresholds = result_dir / "v_thresholds.csv"
+            if not thresholds.is_file():
+                missing.append(thresholds)
         if spike_run is not None:
             stem = f"spike_in/{spike_run}/{spike_case}"
             result_dir = root / "results" / "01_spike_in" / spike_run / spike_case
@@ -410,7 +416,7 @@ def verify_first_approach_outputs(
                 f"{sorted(missing_localization)}"
             )
         if spike_run is None and stratum == "all_combined":
-            base = Path("figures") / "01_set_count" / stratum
+            base = Path("figures") / output_name / stratum
             published = {Path(path) for path in manifest["png"].dropna()}
             expected = {
                 base / chain / article_name(chain, panel)
@@ -658,6 +664,8 @@ def main() -> int:
     parser.add_argument("--clonoset-index", type=Path)
     parser.add_argument("--working-dir", type=Path)
     parser.add_argument("--mode", choices=("standard", "spike-in"), default="standard")
+    parser.add_argument("--v-thresholds", choices=("fixed", "adaptive"), default="fixed",
+                        help="Fit exploratory V-segment plot cutoffs in a separate Approach 1 run.")
     parser.add_argument("--spike-chain", choices=("TRA", "TRB"), default="TRA")
     parser.add_argument("--spike-v-gene", help="Optional exact noncandidate V annotation.")
     parser.add_argument("--spike-clones", type=int, default=10)
@@ -683,6 +691,10 @@ def main() -> int:
         sys.path.insert(0, str(root))
     selected_approaches = resolve_sequence(arguments.approach)
     selected_strata = resolve_strata(arguments.strata)
+    adaptive = arguments.v_thresholds == "adaptive"
+    if adaptive and (arguments.mode != "standard" or selected_approaches != ["1"]):
+        parser.error("--v-thresholds adaptive requires a standard Approach 1 run")
+    output_name = "01_set_count_adaptive" if adaptive else "01_set_count"
     base_environment = _base_environment(arguments)
     if arguments.mode == "spike-in" and arguments.spike_stage != "all":
         sys.path.insert(0, str(root))
@@ -691,7 +703,7 @@ def main() -> int:
         suffix = f"_{arguments.spike_dose_index}" if arguments.spike_stage == "dose" else ""
         pipeline_log = root / "logs" / "spike_driver" / run_id / f"{arguments.spike_stage}{suffix}.log"
     else:
-        pipeline_log = root / "logs" / "pipeline.log"
+        pipeline_log = root / "logs" / output_name / "pipeline.log" if adaptive else root / "logs" / "pipeline.log"
     pipeline_logger = Logger(pipeline_log)
     pipeline_logger.write(
         "PIPELINE START | approaches="
@@ -707,9 +719,11 @@ def main() -> int:
             name, relative_path = APPROACHES[key]
             notebook_path = root / relative_path
             if key == "1":
-                prepare_first_approach_output_directories(selected_strata)
+                prepare_first_approach_output_directories(selected_strata, output_name=output_name)
                 for stratum_position, stratum in enumerate(selected_strata, start=1):
                     stem = STRATUM_BY_KEY[stratum]
+                    if adaptive:
+                        stem = f"{output_name}/{stem}"
                     final_complete_run = (
                         set(selected_strata) == set(STRATUM_BY_KEY)
                         and stratum_position == len(selected_strata)
@@ -721,6 +735,7 @@ def main() -> int:
                     environment = {
                         **base_environment,
                         "MICE_TCR_MODE": "standard",
+                        "MICE_TCR_V_THRESHOLDS": arguments.v_thresholds,
                         "MICE_TCR_STRATUM": stratum,
                         "MICE_TCR_FINALIZE_SUMMARY": (
                             "1" if final_complete_run else "0"
@@ -735,8 +750,8 @@ def main() -> int:
                     pipeline_logger.write(
                         f"STRATUM {stratum_position}/{len(selected_strata)} DONE | {stratum}"
                     )
-                verify_first_approach_outputs(selected_strata)
-                archive_path = archive_first_approach_figures()
+                verify_first_approach_outputs(selected_strata, output_name=output_name)
+                archive_path = archive_first_approach_figures(output_name=output_name)
                 pipeline_logger.write(
                     f"FIGURE ARCHIVE CREATED | {archive_path.relative_to(root)}"
                 )

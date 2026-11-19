@@ -18,7 +18,7 @@ from src.article_figures import (
     plot_retention,
     plot_subsets,
 )
-from src.v_thresholds import fit_plot_thresholds
+from src.v_thresholds import FIXED_THRESHOLDS, PlotThresholds, fit_plot_thresholds, mean_plot_thresholds
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,6 +138,57 @@ def _load_notebook_function(function_name):
             exec(compile(module, "venn_original.ipynb", "exec"), namespace)
             return namespace[function_name]
     raise AssertionError(f"Function {function_name} was not found")
+
+
+@pytest.mark.parametrize("partial_panel", [False, True])
+def test_dropout_cutoffs_omit_whole_mice_and_weight_groups_equally(partial_panel):
+    plot_thresholds = _load_notebook_function("_plot_thresholds")
+    group_sizes = {"g1": 2, "g2": 2, "g4": 2, "g5": 3, "g6": 4}
+    group_cutoffs = {"g1": PlotThresholds(0.3, 60), "g5": PlotThresholds(0.6, 70),
+                     "g6": PlotThresholds(1.2, 90)}
+    metadata, records = [], []
+    cohort = {}
+    for group, size in group_sizes.items():
+        columns = []
+        for i in range(size):
+            mouse = f"{group}_mouse_{i}"
+            for subtype in ("CD4", "CD8"):
+                for organ in ("thymus", "spleen"):
+                    sample = f"{mouse}_{subtype}_{organ}"
+                    columns.append(sample)
+                    metadata.append({"sample_id": sample, "mouse_id": mouse})
+        cohort[group] = pd.DataFrame(1, index=["aaV"], columns=columns)
+    panels = cohort.copy()
+    if partial_panel:
+        panels["g1"] = cohort["g1"].iloc[:, :4]
+
+    def summarize(held_out, *, include_regions):
+        assert not include_regions
+        changed = [group for group in panels if held_out[group] is not panels[group]]
+        assert len(changed) == 1
+        group = changed[0]
+        removed = panels[group].columns.difference(held_out[group].columns)
+        assert len(removed) == 4
+        assert len({sample.rsplit("_", 2)[0] for sample in removed}) == 1
+        share, retention = group_cutoffs[group]
+        return {"initial_share": share / 100, "retention": retention / 100}
+
+    plot_thresholds.__globals__.update({
+        "V_THRESHOLD_MODE": "adaptive", "V_THRESHOLD_RECORDS": records, "metadata": pd.DataFrame(metadata),
+        "_structural_v_summary": summarize, "FIXED_THRESHOLDS": FIXED_THRESHOLDS,
+        "fit_plot_thresholds": PlotThresholds, "mean_plot_thresholds": mean_plot_thresholds,
+    })
+    result = plot_thresholds("TRA", "CD4+", panels, cohort_tables=cohort)
+    mice = [row for row in records if row["level"] == "mouse"]
+    assert len(mice) == 9
+    assert {row["omitted_group"] for row in mice} == {"g1", "g5", "g6"}
+    if partial_panel:
+        assert result == FIXED_THRESHOLDS
+        statuses = {row["status"] for row in mice if row["omitted_group"] == "g1"}
+        assert statuses == {"no_panel_libraries", "skipped_empty_group"}
+    else:
+        assert result == pytest.approx((0.7, 220 / 3))
+        assert records[-1]["n_fitted"] == 9
 
 
 def test_article_score_and_entropy_use_retention_and_four_g1_regions():

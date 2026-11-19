@@ -41,14 +41,20 @@ The fit finds two splits by maximizing between-class variance. It splits the
 log10 initial share first, then splits retention among the V segments above
 that share cutoff. Each side of a split needs at least two segments. The
 initial-share split leaves at least four segments for the retention split.
-Degenerate fits use the fixed 0.6% and 70% defaults and record the fallback.
 
-The full-panel fit sets the two plotted cutoffs. The run also refits them
-after omitting each mouse and all its libraries from its structural group in
-turn. Groups with only one eligible mouse are recorded as skipped. Read both
-the full-data and leave-one-mouse-out rows in
-`results/01_set_count_adaptive/all_combined/v_thresholds.csv`. These cutoffs
-are descriptive. The leave-one-out fits measure sensitivity to mouse removal.
+The run starts each fit from the full set of downsampled libraries and omits
+one mouse from g1, g5 or g6, including all its organs and cell subsets.
+Each eligible mouse in those three groups is tried once per panel. A fit is
+skipped if the mouse has no libraries in that panel or its removal would
+empty its group. The group cutoffs are arithmetic means of valid fits in
+percentage units. The dashed lines are the arithmetic mean of the three
+group means, giving all three groups equal weight. If a group has no
+valid fit, the panel uses the fixed 0.6% and 70% defaults.
+
+Read the mouse, group and final rows in
+`results/01_set_count_adaptive/all_combined/v_thresholds.csv` for the fitted
+cutoffs and the number of attempted and successful fits. Selection and ranking
+use the full-panel data with the aggregated cutoffs.
 Figures and the archive go to `figures/01_set_count_adaptive/` and
 `figures/01_set_count_adaptive.zip`. Standard outputs and spike-in settings
 use the fixed mode.

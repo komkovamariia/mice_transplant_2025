@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from statistics import fmean
 from typing import NamedTuple
 
 import numpy as np
@@ -13,6 +14,15 @@ class PlotThresholds(NamedTuple):
 
 
 FIXED_THRESHOLDS = PlotThresholds(0.6, 70.0)
+
+
+def mean_plot_thresholds(fits):
+    if not fits:
+        return None
+    return PlotThresholds(
+        fmean(fit.initial_share_pct for fit in fits),
+        fmean(fit.retention_pct for fit in fits),
+    )
 
 
 def _split(values, min_upper=2):

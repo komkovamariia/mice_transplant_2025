@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import json
 import sys
+from itertools import combinations
 from pathlib import Path
 
 import pandas as pd
@@ -19,7 +20,7 @@ from scripts.run_analysis import (
     _base_environment, archive_first_approach_figures, execute_notebook, repo_root,
 )
 from src.spike_in import load_snapshot_tables
-from src.v_thresholds import DROPOUT_GROUPS, fit_mouse_dropout_thresholds, mouse_omissions
+from src.v_thresholds import DROPOUT_GROUPS, fit_mouse_dropout_thresholds
 
 
 INPUT_CELLS = ("venn-parameters", "venn-inputs", "venn-historical-code-06", "venn-historical-code-15")
@@ -143,7 +144,7 @@ def calibration_dir(root, cache, chain):
 
 
 def evidence_dir(root, cache, chain):
-    from src.eq7_calibration import fold_evidence, with_structural_fields
+    from src.eq7_calibration import attach_mouse_response, training_evidence, with_structural_fields
     from src.structural_v import structural_remainder, subset_v_tables, v_region_proportions
 
     files = [
@@ -157,20 +158,77 @@ def evidence_dir(root, cache, chain):
         digest.update(path.read_bytes())
     digest.update(repr(DROPOUT_GROUPS).encode())
     for function in (
-        mouse_omissions, fold_evidence, with_structural_fields,
+        build_chain_evidence, attach_mouse_response, training_evidence, with_structural_fields,
         structural_remainder, subset_v_tables, v_region_proportions,
     ):
         digest.update(inspect.getsource(function).encode())
     return cache / "eq7_evidence" / chain / digest.hexdigest()
 
 
-def build_weight_evidence(root, cache):
+def build_chain_evidence(directory, tables, raw, metadata, workers):
     from src.differential_abundance import prepare_counts
-    from src.eq7_calibration import fold_evidence
+    from src.eq7_calibration import attach_mouse_response, training_evidence
+    from src.structural_v import subset_v_tables
+
+    counts, units = prepare_counts(raw, metadata, pool_within_mouse=True)
+    mice = [
+        (group, mouse)
+        for group in DROPOUT_GROUPS
+        for mouse in sorted(metadata.loc[metadata["sample_id"].isin(raw[group].columns), "mouse_id"].unique())
+    ]
+    ids_by_mouse = metadata.groupby(["group_no", "mouse_id"])["sample_id"].agg(list).to_dict()
+    held = [
+        subset_v_tables({group: tables[group]}, ids_by_mouse[(group, mouse)])[group]
+        for group, mouse in mice
+    ]
+    records, singles, pairs = [], [], []
+    for size in (1, 2):
+        for split in combinations(range(len(mice)), size):
+            i, *other = split
+            j = other[0] if other else -1
+            excluded = [mice[index] for index in split]
+            affected_groups = {group for group, _ in excluded}
+            excluded_ids = {sample for key in excluded for sample in ids_by_mouse[key]}
+            retained_ids = metadata.loc[~metadata["sample_id"].isin(excluded_ids), "sample_id"]
+            remaining = subset_v_tables({group: tables[group] for group in affected_groups}, retained_ids)
+            cache_path = directory / ("split_" + "_".join(map(str, split)) + ".csv")
+            if any(held[index].empty for index in split):
+                status = "no eligible libraries for an omitted mouse"
+            elif any(table.empty for table in remaining.values()):
+                status = "omission emptied a structural group"
+            elif cache_path.is_file():
+                rows = pd.read_csv(cache_path, dtype={"heldout_mouse": str})
+                status = "fitted"
+            else:
+                training = {**tables, **remaining}
+                evidence, status = training_evidence(training, excluded, counts, units, n_workers=workers)
+                if evidence is not None:
+                    rows = pd.concat([
+                        attach_mouse_response(evidence, training, held[index], *mice[index]).assign(
+                            heldout_fold=index, outer_fold=j if index == i else i,
+                        )
+                        for index in split
+                    ], ignore_index=True)
+                    _write_csv(rows, cache_path)
+            if status == "fitted":
+                (pairs if other else singles).append(rows)
+            records.append({
+                "fold": i, "paired_fold": j, "group": mice[i][0], "mouse": mice[i][1],
+                "paired_group": mice[j][0] if other else "", "paired_mouse": mice[j][1] if other else "",
+                "status": status,
+            })
+            print(f"Omitted {', '.join(mouse for _, mouse in excluded)}: {status}", flush=True)
+
+    empty = pd.DataFrame(columns=["heldout_fold", "outer_fold"])
+    _write_csv(pd.concat(singles, ignore_index=True) if singles else empty, directory / "fold_evidence.csv")
+    _write_csv(pd.concat(pairs, ignore_index=True) if pairs else empty, directory / "inner_fold_evidence.csv")
+    _write_csv(pd.DataFrame(records), directory / "fold_status.csv")
+
+
+def build_weight_evidence(root, cache):
     from src.runtime import configure_runtime
     from src.spike_in import snapshot_tables
     from src.structural_sampling import downsample_group_tables
-    from src.structural_v import subset_v_tables
 
     metadata = _metadata(cache)
     seeds = json.loads((cache / "v_input_seeds.json").read_text())
@@ -185,36 +243,54 @@ def build_weight_evidence(root, cache):
             snapshot_tables(tables, calibration, chain, metadata)
         directory = evidence_dir(root, cache, chain)
         directory.mkdir(parents=True, exist_ok=True)
-        if (directory / "fold_evidence.csv").is_file():
-            print(f"Reusing fold evidence from {directory / 'fold_evidence.csv'}", flush=True)
-            continue
-        counts, units = prepare_counts(raw, metadata, pool_within_mouse=True)
-        records, frames = [], []
-        omissions = mouse_omissions(tables, metadata, cohort_tables=raw)
-        for i, (group, mouse, training, status) in enumerate(omissions, 1):
-            output = directory / f"fold_{i:03d}.csv"
-            if training is not None:
-                if output.is_file():
-                    frames.append(pd.read_csv(output))
-                    status = "cached"
-                else:
-                    ids = metadata.loc[metadata["mouse_id"].eq(mouse) & metadata["group_no"].eq(group), "sample_id"]
-                    held = subset_v_tables({group: tables[group]}, ids)[group]
-                    rows, status = fold_evidence(training, held, group, mouse, counts, units, n_workers=workers)
-                    if rows is not None:
-                        _write_csv(rows, output)
-                        frames.append(rows)
-            records.append({"heldout_group": group, "heldout_mouse": mouse, "status": status})
-            print(f"{chain} omitted {mouse}: {status}", flush=True)
-        _write_csv(pd.DataFrame(records), directory / "fold_status.csv")
-        if not frames:
-            raise ValueError(f"No usable Equation 7 folds for {chain}; see {directory / 'fold_status.csv'}")
-        _write_csv(pd.concat(frames, ignore_index=True), directory / "fold_evidence.csv")
-        print(f"Fold evidence written to {directory / 'fold_evidence.csv'}")
+        status = directory / "fold_status.csv"
+        if status.is_file():
+            print(f"Reusing {chain} evidence in {directory}", flush=True)
+        else:
+            print(f"Preparing {chain} single and paired omissions", flush=True)
+            build_chain_evidence(directory, tables, raw, metadata, workers)
+
+
+def fit_outer_weights(directory, output, prefix, top, ridge):
+    from src.eq7_calibration import CalibrationUnavailable, calibrate_weights, score_candidates
+
+    outer_rows = pd.read_csv(directory / "fold_evidence.csv", dtype={"heldout_mouse": str})
+    inner_rows = pd.read_csv(directory / "inner_fold_evidence.csv", dtype={"heldout_mouse": str})
+    fold_status = pd.read_csv(directory / "fold_status.csv", dtype={"mouse": str})
+    outcomes = ["heldout_n_v", "heldout_n_recovered", "response"]
+    records, coefficients, scores = [], [], []
+    for fold in fold_status.loc[fold_status["paired_fold"].eq(-1)].itertuples(index=False):
+        key = {"outer_fold": fold.fold, "outer_group": fold.group, "outer_mouse": fold.mouse}
+        status = fold.status
+        if status == "fitted":
+            try:
+                weights, _ = calibrate_weights(inner_rows.loc[inner_rows["outer_fold"].eq(fold.fold)], top, ridge)
+            except CalibrationUnavailable as exc:
+                status = str(exc)
+            else:
+                evidence = outer_rows.loc[outer_rows["heldout_fold"].eq(fold.fold)]
+                candidates = score_candidates(evidence.drop(columns=outcomes), weights, top)
+                candidates = candidates.join(evidence.set_index("v_gene")[outcomes], on="v_gene", validate="1:1")
+                candidates = candidates.assign(**key)
+                status = "scored" if not candidates.empty else "No candidates passed the outer training cutoffs."
+                coefficients.append(weights.assign(**key))
+                scores.append(candidates)
+        records.append({**key, "status": status})
+
+    _write_csv(pd.DataFrame(records), output / f"{prefix}_outer_status.csv")
+    empty_weights = pd.DataFrame(columns=["outer_fold", "outer_group", "outer_mouse", "term", "weight"])
+    empty_scores = pd.DataFrame(columns=["outer_fold", "outer_group", "outer_mouse", "v_gene", "response", "calibrated_score"])
+    _write_csv(pd.concat(coefficients, ignore_index=True) if coefficients else empty_weights,
+               output / f"{prefix}_outer_coefficients.csv")
+    _write_csv(pd.concat(scores, ignore_index=True) if scores else empty_scores,
+               output / f"{prefix}_outer_scores.csv")
+    return outer_rows
 
 
 def fit_weights(root, cache, top, ridge):
-    from src.eq7_calibration import calibrate_weights, score_candidates, with_structural_fields
+    from src.eq7_calibration import (
+        CalibrationUnavailable, calibrate_weights, score_candidates, with_structural_fields,
+    )
     from src.spike_in import EDGER_SUCCESS
 
     metadata = _metadata(cache)
@@ -223,22 +299,31 @@ def fit_weights(root, cache, top, ridge):
     output = cache / "eq7_weights"
     output.mkdir(parents=True, exist_ok=True)
     for chain in CHAINS:
-        if edger_status.get(chain) != EDGER_SUCCESS:
-            raise ValueError(f"The saved full-cohort {chain} edgeR model was not fitted successfully.")
         calibration = calibration_dir(root, cache, chain)
         if not (calibration / "count_snapshots" / f"{chain}_manifest.json").is_file():
             raise FileNotFoundError(f"Run the evidence stage for {chain} before fitting weights.")
-        source = evidence_dir(root, cache, chain) / "fold_evidence.csv"
-        if not source.is_file():
+        directory = evidence_dir(root, cache, chain)
+        if not (directory / "fold_status.csv").is_file():
             raise FileNotFoundError(f"Run the evidence stage for {chain} before fitting weights.")
-        weights, selected = calibrate_weights(pd.read_csv(source), top, ridge)
-        tables = load_snapshot_tables(calibration, chain, metadata)
-        prefix = f"{chain.lower()}v"
-        ranking = with_structural_fields(pd.read_csv(baseline / f"{prefix}_ranking.csv"), tables)
-        _write_csv(weights.assign(top=top, ridge=ridge), output / f"{chain.lower()}_coefficients.csv")
-        _write_csv(selected, output / f"{chain.lower()}_calibration_rows.csv")
-        _write_csv(score_candidates(ranking, weights, top), output / f"{chain.lower()}_scored_top_v.csv")
-        print(f"{chain} weights and per-segment contributions written to {output}")
+        prefix = chain.lower()
+        rows = fit_outer_weights(directory, output, prefix, top, ridge)
+        try:
+            weights, selected = calibrate_weights(rows, top, ridge)
+        except CalibrationUnavailable as exc:
+            status = str(exc)
+            weights = pd.DataFrame(columns=["term", "weight", "varied_in_training"])
+            selected = rows.iloc[:0]
+        else:
+            status = "fitted"
+        _write_csv(weights.assign(top=top, ridge=ridge), output / f"{prefix}_coefficients.csv")
+        _write_csv(selected, output / f"{prefix}_calibration_rows.csv")
+        scored = pd.DataFrame(columns=["v_gene", "calibrated_score"])
+        if status == "fitted" and edger_status.get(chain) == EDGER_SUCCESS:
+            tables = load_snapshot_tables(calibration, chain, metadata)
+            ranking = with_structural_fields(pd.read_csv(baseline / f"{prefix}v_ranking.csv"), tables)
+            scored = score_candidates(ranking, weights, top)
+        _write_csv(scored, output / f"{prefix}_scored_top_v.csv")
+        print(f"{chain} full-cohort calibration: {status}. Reports written to {output}")
 
 
 def main():

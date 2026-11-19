@@ -82,13 +82,19 @@ python scripts/run_v_updates.py evidence
 python scripts/run_v_updates.py weights --top 10 --ridge 0.1
 ```
 
-The evidence stage uses a fixed rarefaction seed and excludes each mouse
-from g1, g5 or g6 in turn. It retains the existing raw-UMI edgeR and Fisher
-definitions and fits those tests only on the remaining mice. The structural
-term counts unique aaV left after excluding g2, g4, g5 and g6. Within each
-fold, the shortlist is ordered by the fraction of the V segment's g1 UMI
-burden in `g1 only` relative to g5 and g6. Ties use the number of distinct
-aaV with that V segment, then the segment name.
+The evidence stage uses a fixed rarefaction seed and caches single and
+paired mouse exclusions from g1, g5 and g6. All libraries for the omitted
+mice are removed before fitting the raw-UMI edgeR and Fisher tests or
+calculating structural features. Each pair shares one evidence fit.
+The structural term counts unique aaV left after subtracting g2, g4, g5
+and g6.
+
+The weights stage fits two Otsu cutoffs directly on the training profile
+in each fold. It ranks eligible segments by the fraction of the V
+segment's g1 UMI burden in `g1 only` relative to g5 and g6. Ties use the
+number of distinct aaV with that V segment, then the segment name. A fold
+with no valid cutoffs supplies zero eligible segments. The cutoffs from
+the full-cohort plots are descriptive and independent of this procedure.
 
 For each shortlisted V segment, the response is the fraction of distinct
 aaV with that V segment on the omitted mouse that also occur in the
@@ -99,14 +105,25 @@ nonnegative ridge regression with standardized predictors and equal total
 weight for each group, equal weight per usable mouse within a group and
 equal weight per observed top V segment within a mouse.
 
-The weights stage reuses fold evidence when changing `--top` or `--ridge`.
-It writes separate coefficients and contributions for TRA and TRB to
-`results/01_v_update_inputs/all_combined/eq7_weights/`. The scored shortlist
-uses the saved full-cohort edgeR and Fisher verdicts and the same fixed
-rarefaction as the evidence stage. The calibration CSVs retain each
-mouse's response and regression weight. These data provide internal
-calibration for repertoire recurrence. An independent cohort would be
-needed to estimate out-of-sample performance.
+For validation, each outer mouse is excluded from both the training
+features and the responses used to fit its weights. The inner fold
+excludes a second mouse, computes its predictors on the remaining mice
+and uses that second mouse only to measure the response. The final
+selection and scoring for the outer fold use its training profile and
+the weights fitted from the inner folds. The outer mouse provides the
+response after selection and scoring. The `*_outer_status.csv` reports
+why an outer fold was skipped. For example, if only three g1 mice have
+usable data, omitting one g1 mouse in each of the outer and inner folds
+can leave too few g1 replicates for edgeR and no g1 calibration responses.
+
+The weights stage reuses evidence when changing `--top` or `--ridge`.
+Prespecify these settings to interpret the outer results as validation.
+The reports in `results/01_v_update_inputs/all_combined/eq7_weights/`
+include outer-fold coefficients and scores. The coefficients in
+`*_coefficients.csv` use the single-exclusion rows from the full cohort.
+The final descriptive shortlist refits the Otsu cutoffs on the full
+cohort using the same fixed rarefaction and the saved full-cohort count
+test verdicts. Use the outer reports for held-out results.
 
 Available keys:
 

@@ -30,14 +30,30 @@ S(v) = f_full(v) * r(v)
 
 `n_full(v)` is the number of unique g1 aaV clonotypes using `v`, `n_rem(v)` is the number left after subtracting the union of g2, g4, g5 and g6, and `N_full` is the total number of unique g1 aaV clonotypes.
 
-The graphical thresholds are:
+Standard runs fit the two graphical thresholds separately for each chain
+and panel using the displayed rarefied libraries:
 
 ```text
-f_full(v) >= 0.006
-r(v) >= 0.70
+f_full(v) >= median(f_full)
+r(v) >= Q_0.75(r | f_full >= median(f_full))
 ```
 
-The dumbbell plot orders V segments by decreasing `S(v)` after applying both graphical thresholds. Bubble labels are ranked by `S(v)` among points meeting both dashed thresholds. The combined bubble marks up to 11 segments and the separate CD8+ and CD4+ panels mark up to 10 each. Each heatmap uses its paired bubble's selected segments and orders them by g1-only regional share, then by `S(v)`. These thresholds apply to TRA and TRB in the combined and subset-specific figures. The representative-seed selection and the spike-in family selection retain their original 66% eligibility criterion. The separate structural panels restrict the combined run's rarefied libraries to the indicated subset and recompute the set intersections.
+The quantiles use linear interpolation. Four segments with valid positive
+initial shares are required. The retention cutoff includes ties and is
+positive whenever a segment on the right was retained. If the upper
+quartile is zero, the smallest positive retention on the right is used.
+The thresholds describe a relative shortlist. They do not identify a
+biological boundary or control a false discovery rate. Leave-one-mouse-out
+cutoffs are reported to show sensitivity to the included mice.
+
+The dumbbell plot orders V segments by decreasing `S(v)` after applying
+both cutoffs. The combined bubble annotates up to 11 segments and the
+separate CD8+ and CD4+ panels annotate up to 10 each. Each heatmap uses
+its paired bubble's annotated segments and orders them by g1-only
+regional share, then by `S(v)`. The subset panels restrict the combined
+run's rarefied libraries to the indicated subset and recompute the set
+intersections. The representative-seed selection and spike-in family
+selection use their historical eligibility rules.
 
 The heatmap uses four mutually exclusive g1-containing regions:
 
@@ -72,9 +88,9 @@ log2((g1_count + 1) / (g5_count + g6_count + 1))
 
 Benjamini-Hochberg correction is applied across the tested aaV clonotypes.
 
-edgeR uses mouse-level analysis units with group levels `allogeneic` and `g1`. Positive logFC means enrichment in g1. The model sequence is `DGEList`, `calcNormFactors`, `filterByExpr`, `estimateDisp`, `glmQLFit` and `glmQLFTest`. At least two analysis units are required in each contrast group.
+edgeR uses mouse-level analysis units with group levels `allogeneic` and `g1`. Positive logFC indicates higher abundance in g1. Negative logFC indicates higher abundance in the pooled g5+g6 reference. The model sequence is `DGEList`, `calcNormFactors`, `filterByExpr`, `estimateDisp`, `glmQLFit` and `glmQLFTest`. At least two analysis units are required in each contrast group. The figure shows up to eight V segments per direction of the mean significant-aaV effect. The support panel counts significant aaV in both directions.
 
-The final TRAV table keeps differential evidence separate from the structural score. Its evidence score is:
+The baseline V-ranking tables report the historic Equation 7 score:
 
 ```text
 4 * edgeR_g1_enriched
@@ -82,7 +98,37 @@ The final TRAV table keeps differential evidence separate from the structural sc
 + log1p(n_g1_exclusive_aav)
 ```
 
-Ties use significant-aaV counts, exclusive-aaV counts and V name. This ranking is not the same quantity as `S(v)`.
+Ties use significant-aaV counts, exclusive-aaV counts and V name.
+
+### Calibrated Equation 7 in the combined stratum
+
+The calibration fits three nonnegative coefficients. Its predictors are
+the edgeR and Fisher indicators for a positive mean effect among
+FDR-significant aaV and the natural log of one plus the number of unique
+residual aaV. A row represents a V segment and an omitted mouse. Its
+response is the fraction of that mouse's unique aaV with the segment
+that occur in the training `g1 only` set. The fraction is signed
+positive for g1 and negative for g5 and g6. Rows without observations
+for the segment in the omitted mouse are excluded.
+
+The objective is weighted squared error plus a ridge penalty on the
+slopes in standardized predictor space. Each group has equal total
+weight, each contributing mouse has equal weight within its group and
+each usable row has equal weight within its mouse. Constant predictors
+receive zero coefficients. Back-transformed slopes define the additive
+ranking score `E`. The fitted response adds a separate, unpenalized
+intercept. The response and metric describe overlaps in this cohort.
+
+In outer validation, both the outer and inner mouse are excluded
+from the structural and count calculations for every calibration row.
+The cutoffs and predictor standardization use the respective training
+data. The outer scores then use predictors computed on all mice except
+the outer test mouse. With three g1 mice, holding out two leaves one
+g1 replicate and prevents calibration of outer g1 folds. The
+full-cohort fit uses one-mouse omissions. Its learned coefficients are
+applied to every candidate passing the cutoffs in the same rarefaction
+profile used for the displayed combined figures. See
+[RUN_GUIDE.md](../RUN_GUIDE.md) for the three diagnostic plots.
 
 ## Stability checks
 

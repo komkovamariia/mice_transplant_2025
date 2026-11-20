@@ -1,7 +1,9 @@
 import pandas as pd
 import pytest
 
-from src.eq7_calibration import FEATURES, calibrate_weights, score_candidates, with_structural_fields
+from src.eq7_calibration import (
+    FEATURES, STANDARDIZED_FEATURES, calibrate_weights, score_candidates, with_structural_fields,
+)
 
 
 def test_calibration_weights_groups_equally_and_reports_each_term():
@@ -22,16 +24,22 @@ def test_calibration_weights_groups_equally_and_reports_each_term():
     group_weights = selected.groupby("heldout_group")["regression_weight"].sum()
     assert group_weights.to_list() == pytest.approx([1 / 3] * 3)
     assert len(selected) == 18
-    assert set(selected["v_gene"]) == {"TRAV4", "TRAV5"}
+    assert set(selected["v_gene"]) == {"TRAV5", "TRAV7"}
     assert fit.loc[0, "weight"] > 0
     assert not fit.loc[1, "varied_in_training"]
     assert fit.loc[1, "weight"] == 0
     assert fit["weight"].ge(0).all()
+    assert selected[list(STANDARDIZED_FEATURES)].to_numpy() @ fit["standardized_weight"].to_numpy() == (
+        pytest.approx(selected["fitted_response"].to_numpy()
+                      - (selected["response"] * selected["regression_weight"]).sum())
+    )
 
-    scored = score_candidates(data.iloc[:8], fit, top=2)
+    scored = score_candidates(data.iloc[:8], fit)
     assert len(scored) == 2
     expected = scored[[f"contribution_{term}" for term in FEATURES]].sum(axis=1)
     pd.testing.assert_series_equal(scored["calibrated_score"], expected, check_names=False)
+    assert scored["E"].to_list() == pytest.approx(expected.to_list())
+    assert scored["predicted_response"].to_list() == pytest.approx((scored["E"] + fit["intercept"].iat[0]).to_list())
 
 
 def test_only_g1_shortlist_and_equation_7_remainder_use_distinct_backgrounds():
@@ -80,7 +88,7 @@ def test_held_mouse_changes_only_evaluation_outcomes_in_its_outer_fold(tmp_path,
     monkeypatch.setattr("src.eq7_calibration.rank_v_segments", rank)
 
     changed = {**tables, "g1": tables["g1"].copy()}
-    candidate = changed["g1"].index.map(lambda key: key[1] == "TRAV4" and key[0] != "0")
+    candidate = changed["g1"].index.map(lambda key: key[1] == "TRAV5" and key[0] != "0")
     changed["g1"].loc[candidate, ["g1_0_cd4", "g1_0_cd8"]] = 0
 
     reports = []
@@ -88,7 +96,7 @@ def test_held_mouse_changes_only_evaluation_outcomes_in_its_outer_fold(tmp_path,
         directory = tmp_path / name
         directory.mkdir()
         build_chain_evidence(directory, counts, counts, metadata, workers=1)
-        fit_outer_weights(directory, directory, "tra", top=4, ridge=0.1)
+        fit_outer_weights(directory, directory, "tra", top=1, ridge=0.1)
         reports.append(tuple(
             pd.read_csv(directory / f"tra_outer_{report}.csv").query("outer_fold == 0").reset_index(drop=True)
             for report in ("coefficients", "scores")
@@ -96,9 +104,9 @@ def test_held_mouse_changes_only_evaluation_outcomes_in_its_outer_fold(tmp_path,
 
     (before_weights, before_scores), (after_weights, after_scores) = reports
     assert len(before_weights) == 3
-    assert len(before_scores) == 4
+    assert len(before_scores) == 2
     pd.testing.assert_frame_equal(before_weights, after_weights)
     outcomes = ["heldout_n_v", "heldout_n_recovered", "response"]
     pd.testing.assert_frame_equal(before_scores.drop(columns=outcomes), after_scores.drop(columns=outcomes))
-    v = before_scores["v_gene"].eq("TRAV4")
+    v = before_scores["v_gene"].eq("TRAV5")
     assert before_scores.loc[v, "response"].item() > after_scores.loc[v, "response"].item()

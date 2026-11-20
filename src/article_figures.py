@@ -103,10 +103,7 @@ def _title(ax, title, size=13, pad=5):
 def eligible_segments(profile, thresholds=FIXED_THRESHOLDS):
     if thresholds is None:
         return profile.iloc[:0]
-    return profile.loc[
-        profile[SHARE_COLUMN].ge(thresholds.initial_share_pct)
-        & profile[RETENTION_COLUMN].ge(thresholds.retention_pct)
-    ]
+    return profile.loc[thresholds.includes(profile[SHARE_COLUMN], profile[RETENTION_COLUMN])]
 
 
 def plot_dumbbell(profile, chain, suffix="", *, thresholds=FIXED_THRESHOLDS):
@@ -165,6 +162,12 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
     if thresholds is not None:
         ax.axvline(thresholds.initial_share_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
         ax.axhline(thresholds.retention_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
+        ax.text(
+            0.98, 0.035,
+            f"Share ≥ {thresholds.initial_share_pct:.3g}% · Retention ≥ {thresholds.retention_pct:.4g}%",
+            transform=ax.transAxes, ha="right", va="bottom", fontsize=6.4 if compact else 8,
+            bbox={"facecolor": "white", "alpha": 0.88, "edgecolor": "none", "pad": 2},
+        )
     else:
         ax.text(0.98, 0.04, "Adaptive cutoffs unavailable", transform=ax.transAxes,
                 ha="right", fontsize=size)
@@ -298,7 +301,7 @@ def plot_subsets(profiles, chain, *, thresholds_by_subset=None):
         heatmap = fig.add_axes((0.605, bottom, 0.319, 0.354))
         heatmap_color = fig.add_axes((0.939, bottom, 0.016, 0.354))
         profile = profiles[subset]
-        thresholds = (thresholds_by_subset or {}).get(subset, FIXED_THRESHOLDS)
+        thresholds = FIXED_THRESHOLDS if thresholds_by_subset is None else thresholds_by_subset[subset]
         genes = _retention_panel(fig, bubble, bubble_color, profile,
                                  f"{subset} V-segment retention", compact=True, thresholds=thresholds)
         _localization_panel(fig, heatmap, heatmap_color, profile, genes, chain,
@@ -315,24 +318,41 @@ def plot_edger(ranking, chain, suffix=""):
     effect = "mean_edger_log2fc"
     count = "n_edger_significant"
     tested = ranking.loc[ranking[count].gt(0)]
-    for i, (column, title, xlabel, color) in enumerate((
-        (effect, "A. V segments enriched in g1", "Mean log2 fold change among significant aaV clonotypes", CORAL),
-        (count, "B. V segments with the largest significant aaV support", "Number of significant aaV clonotypes", PURPLE),
+    for i, (column, title, xlabel) in enumerate((
+        (effect, "A. Mean effect among significant aaV", "Mean log₂ fold change: g1 relative to g5+g6"),
+        (count, "B. V segments by significant aaV count", "Number of aaV with FDR < 0.05, both directions"),
     )):
-        ax = fig.add_axes((0.084 + 0.497 * i, 0.085, 0.407, 0.787))
+        ax = fig.add_axes((0.155, 0.095, 0.338, 0.745) if i == 0 else (0.628, 0.095, 0.358, 0.745))
         _ticks(ax, 8)
         _grid(ax, "x")
-        _title(ax, title, size=10, pad=10)
+        _title(ax, title, size=10, pad=18)
         ax.set_xlabel(xlabel, fontsize=9)
         if i == 0:
             ax.set_ylabel(f"{chain} V segment", fontsize=9)
-        rows = tested.dropna(subset=[column]).sort_values([column, "v_gene"], ascending=[False, True]).head(15)
-        if rows.empty:
-            empty_axis(ax, "No edgeR-significant aaV clonotypes.")
+        rows = tested.dropna(subset=[column]).sort_values([column, "v_gene"], ascending=[False, True])
+        if column == effect:
+            positive = rows.loc[rows[effect].gt(0)].head(8)
+            negative = rows.loc[rows[effect].lt(0)].sort_values([effect, "v_gene"]).head(8)
+            rows = pd.concat([positive, negative])
         else:
-            ax.barh(rows["v_gene"], rows[column], color=color, height=0.78)
+            rows = rows.head(15)
+        if rows.empty:
+            empty_axis(ax, "No nonzero mean effects." if column == effect else "No edgeR-significant aaV clonotypes.")
+        else:
+            colors = np.where(rows[effect].gt(0), CORAL, PURPLE) if column == effect else PURPLE
+            ax.barh(rows["v_gene"], rows[column], color=colors, height=0.78)
             ax.invert_yaxis()
-            if i == 1:
+            if column == effect:
+                from matplotlib.patches import Patch
+
+                ax.axvline(0, color="#555555", linewidth=0.7)
+                ax.legend(
+                    handles=[Patch(color=PURPLE, label="Higher in g5+g6 (−)"),
+                             Patch(color=CORAL, label="Higher in g1 (+)")],
+                    loc="lower center", bbox_to_anchor=(0.5, 1.007), ncol=2,
+                    frameon=False, fontsize=7.2, borderaxespad=0,
+                )
+            else:
                 ax.xaxis.set_major_locator(MaxNLocator(9, integer=True))
     return fig
 

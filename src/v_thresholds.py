@@ -1,4 +1,4 @@
-"""Exploratory cutoffs for the V-segment retention figures."""
+"""Empirical upper-right screening for V-segment retention."""
 
 from __future__ import annotations
 
@@ -12,7 +12,13 @@ class PlotThresholds(NamedTuple):
     initial_share_pct: float
     retention_pct: float
 
+    def includes(self, share_pct, retention_pct):
+        return (share_pct >= self.initial_share_pct) & (retention_pct >= self.retention_pct)
 
+
+THRESHOLD_METHOD = "conditional_quantiles"
+SHARE_QUANTILE = 0.50
+RETENTION_QUANTILE = 0.75
 FIXED_THRESHOLDS = PlotThresholds(0.6, 70.0)
 
 
@@ -25,37 +31,23 @@ def mean_plot_thresholds(fits):
     )
 
 
-def _split(values, min_upper=2):
-    # Use an exact split between observed values, with two segments on each side.
-    ordered = np.sort(values)
-    n = len(ordered)
-    boundaries = np.arange(2, n - min_upper + 1)
-    boundaries = boundaries[ordered[boundaries - 1] < ordered[boundaries]]
-    if not len(boundaries):
-        return None
-    cumulative = np.cumsum(ordered)
-    lower = cumulative[boundaries - 1]
-    upper = cumulative[-1] - lower
-    difference = upper / (n - boundaries) - lower / boundaries
-    variance = boundaries * (n - boundaries) * difference**2
-    split = boundaries[np.argmax(variance)]
-    return float((ordered[split - 1] + ordered[split]) / 2)
-
-
 def fit_plot_thresholds(initial_share_pct, retention_pct):
-    """Fit the share split on a log scale, then split retention above it."""
+    """Find the median share and the upper retention quartile above that share."""
     share = np.asarray(initial_share_pct, dtype=float)
     retention = np.asarray(retention_pct, dtype=float)
     observed = np.isfinite(share) & np.isfinite(retention) & (share > 0)
     share, retention = share[observed], retention[observed]
-    log_share = np.log10(share)
-    share_split = _split(log_share, min_upper=4)
-    if share_split is None:
+    if share.size < 4:
         return None
-    retention_split = _split(retention[log_share >= share_split])
-    if retention_split is None:
+    share_cutoff = float(np.quantile(share, SHARE_QUANTILE, method="linear"))
+    supported = retention[share >= share_cutoff]
+    retained = supported[supported > 0]
+    if retained.size == 0:
         return None
-    return PlotThresholds(10**share_split, retention_split)
+    retention_cutoff = float(np.quantile(supported, RETENTION_QUANTILE, method="linear"))
+    if retention_cutoff <= 0:
+        retention_cutoff = float(retained.min())
+    return PlotThresholds(share_cutoff, retention_cutoff)
 
 
 DROPOUT_GROUPS = ("g1", "g5", "g6")
@@ -84,42 +76,46 @@ def mouse_omissions(tables, metadata, *, cohort_tables=None):
 
 
 def fit_mouse_dropout_thresholds(tables, metadata, *, cohort_tables=None):
+    """Fit the displayed cutoffs and audit their sensitivity to mouse omission."""
     from .structural_v import structural_summary
 
     records = []
 
-    def record(level, group, mouse, cutoffs, status, n_versions, n_fitted):
+    def record(level, group, mouse, cutoffs, status, n_versions, n_fitted, n_selected=None):
         records.append({
-            "level": level, "omitted_group": group, "omitted_mouse": mouse, "status": status,
+            "method": THRESHOLD_METHOD, "level": level,
+            "omitted_group": group, "omitted_mouse": mouse, "status": status,
             "n_versions": n_versions, "n_fitted": n_fitted,
             "initial_share_pct": cutoffs.initial_share_pct if cutoffs else None,
             "retention_pct": cutoffs.retention_pct if cutoffs else None,
+            "n_selected": n_selected,
         })
+
+    def fit(profile_tables):
+        summary = structural_summary(profile_tables)
+        share = 100 * summary["initial_share"]
+        retention = 100 * summary["retention"]
+        cutoffs = fit_plot_thresholds(share, retention)
+        return cutoffs, int(cutoffs.includes(share, retention).sum()) if cutoffs else 0
 
     group_fits = {group: [] for group in DROPOUT_GROUPS}
     n_versions = dict.fromkeys(DROPOUT_GROUPS, 0)
     for group, mouse, training, status in mouse_omissions(tables, metadata, cohort_tables=cohort_tables):
         n_versions[group] += 1
-        candidate = None
+        candidate, n_selected = None, None
         if training is not None:
-            if training["g1"].empty:
-                status = "empty_target"
-            else:
-                summary = structural_summary(training)
-                candidate = fit_plot_thresholds(100 * summary["initial_share"], 100 * summary["retention"])
-                status = "fitted" if candidate else "no_split"
+            candidate, n_selected = fit(training)
+            status = "fitted" if candidate else "no_valid_cutoffs"
         if candidate:
             group_fits[group].append(candidate)
-        record("mouse", group, mouse, candidate, status, 1, int(bool(candidate)))
+        record("mouse", group, mouse, candidate, status, 1, int(bool(candidate)), n_selected)
 
-    group_means = []
     for group, fits in group_fits.items():
         mean = mean_plot_thresholds(fits)
-        if mean:
-            group_means.append(mean)
-        record("group", group, "", mean, "mean" if mean else "no_valid_fit", n_versions[group], len(fits))
+        status = "mean_of_omissions" if mean else "no_valid_fit"
+        record("group", group, "", mean, status, n_versions[group], len(fits))
 
-    cutoffs = mean_plot_thresholds(group_means) if len(group_means) == len(DROPOUT_GROUPS) else None
-    status = "mean_of_group_means" if cutoffs else "unavailable_missing_group_mean"
-    record("final", "", "", cutoffs, status, sum(n_versions.values()), sum(map(len, group_fits.values())))
+    cutoffs, n_selected = fit(tables)
+    status = "fitted_on_displayed_profile" if cutoffs else "no_valid_cutoffs"
+    record("final", "", "", cutoffs, status, 1, int(bool(cutoffs)), n_selected)
     return cutoffs, records

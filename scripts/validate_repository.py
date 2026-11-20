@@ -332,7 +332,6 @@ def _validate_runner_and_documentation() -> None:
         "verify_first_approach_outputs",
         "prepare_first_approach_output_directories",
         "archive_first_approach_figures",
-        "01_set_count.zip",
         "figure_manifest.csv",
         *EXPECTED_STRATA,
         *EXPECTED_AUDIT_STEMS,
@@ -358,6 +357,7 @@ def _validate_runner_and_documentation() -> None:
 
     guide_tokens = (
         *readme_tokens,
+        "01_set_count.zip",
         "--resume",
         "audit_runs/",
         "logs/",

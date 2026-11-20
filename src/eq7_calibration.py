@@ -11,28 +11,32 @@ from scipy.optimize import lsq_linear
 from .differential_abundance import fit_edger, fit_fisher, rank_v_segments
 from .spike_in import EDGER_SUCCESS, aa_v_key
 from .structural_v import structural_remainder, v_region_proportions
-from .v_thresholds import DROPOUT_GROUPS, fit_plot_thresholds
+from .v_thresholds import DROPOUT_GROUPS, THRESHOLD_METHOD, fit_plot_thresholds
 
 
 FEATURES = ("edgeR_g1_enriched", "fisher_g1_enriched", "log1p_n_g1_exclusive_aav")
+STANDARDIZED_FEATURES = tuple(f"z_{feature}" for feature in FEATURES)
+CONTRIBUTIONS = tuple(f"contribution_{feature}" for feature in FEATURES)
 
 
 class CalibrationUnavailable(ValueError):
     """The training folds do not supply enough evidence to fit Equation 7."""
 
 
-def shortlist(ranking, top):
+def shortlist(ranking, top=None):
     rows = ranking.copy()
     rows["initial_share_pct"] = 100 * (rows["n_full"] / rows["n_full"].sum())
     rows["retention_pct"] = 100 * (rows["n_g1_exclusive_aav"] / rows["n_full"])
     cutoff = fit_plot_thresholds(rows["initial_share_pct"], rows["retention_pct"])
+    rows["threshold_method"] = THRESHOLD_METHOD
     rows["training_share_cutoff_pct"] = cutoff.initial_share_pct if cutoff else np.nan
     rows["training_retention_cutoff_pct"] = cutoff.retention_pct if cutoff else np.nan
-    above_share = rows["initial_share_pct"].ge(rows["training_share_cutoff_pct"])
-    above_retention = rows["retention_pct"].ge(rows["training_retention_cutoff_pct"])
-    return rows.loc[above_share & above_retention].sort_values(
+    if cutoff is None:
+        return rows.iloc[:0]
+    eligible = rows.loc[cutoff.includes(rows["initial_share_pct"], rows["retention_pct"])].sort_values(
         ["only_g1_share", "n_full", "v_gene"], ascending=[False, False, True],
-    ).head(top)
+    )
+    return eligible if top is None else eligible.head(top)
 
 
 def with_structural_fields(ranking, tables, *, remainder=None):
@@ -96,7 +100,7 @@ def calibrate_weights(rows, top, ridge):
         raise CalibrationUnavailable("No eligible training responses for " + ", ".join(sorted(missing)) + ".")
     n_mice = fitted.groupby("heldout_group")["heldout_mouse"].transform("nunique")
     n_segments = fitted.groupby(mouse_key)["v_gene"].transform("size")
-    fitted["regression_weight"] = 1 / (3 * n_mice * n_segments)
+    fitted["regression_weight"] = 1 / (len(DROPOUT_GROUPS) * n_mice * n_segments)
     selected["regression_weight"] = fitted["regression_weight"].reindex(selected.index, fill_value=0.0)
     weights = fitted["regression_weight"].to_numpy()
     x = fitted[list(FEATURES)].to_numpy(dtype=float)
@@ -116,16 +120,30 @@ def calibrate_weights(rows, top, ridge):
     solution = lsq_linear(design, response, bounds=(0, np.inf))
     if not solution.success:
         raise RuntimeError(f"Equation 7 weight fit did not converge: {solution.message}")
-    coefficients[active] = solution.x / std_x[active]
-    fit = pd.DataFrame({"term": FEATURES, "weight": coefficients, "varied_in_training": active})
+    standardized_weights = coefficients.copy()
+    standardized_weights[active] = solution.x
+    coefficients[active] = standardized_weights[active] / std_x[active]
+    intercept = mean_y - mean_x @ coefficients
+    fit = pd.DataFrame({
+        "term": FEATURES, "weight": coefficients, "varied_in_training": active,
+        "training_mean": mean_x, "training_sd": std_x,
+        "standardized_weight": standardized_weights, "intercept": intercept,
+    })
+    selected[list(STANDARDIZED_FEATURES)] = (
+        (selected[list(FEATURES)].to_numpy() - mean_x) / np.where(active, std_x, 1)
+    ) * active
+    selected["E"] = selected[list(FEATURES)].to_numpy() @ coefficients
+    selected["fitted_response"] = intercept + selected["E"]
+    selected["residual"] = selected["response"] - selected["fitted_response"]
     return fit, selected
 
 
-def score_candidates(ranking, fit, top):
+def score_candidates(ranking, fit, top=None):
     rows = shortlist(ranking, top).copy()
     weights = fit.set_index("term")["weight"]
-    contributions = [f"contribution_{term}" for term in FEATURES]
-    for term, contribution in zip(FEATURES, contributions, strict=True):
-        rows[contribution] = rows[term] * weights[term]
-    rows["calibrated_score"] = rows[contributions].sum(axis=1)
-    return rows.sort_values(["calibrated_score", "only_g1_share", "v_gene"], ascending=[False, False, True])
+    for term, contribution in zip(FEATURES, CONTRIBUTIONS, strict=True):
+        rows[contribution] = rows[term] * weights.get(term, np.nan)
+    rows["E"] = rows[list(CONTRIBUTIONS)].sum(axis=1, min_count=len(FEATURES))
+    rows["calibrated_score"] = rows["E"]
+    rows["predicted_response"] = rows["E"] + (fit["intercept"].iat[0] if not fit.empty else np.nan)
+    return rows.sort_values(["E", "only_g1_share", "v_gene"], ascending=[False, False, True])

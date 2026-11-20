@@ -31,99 +31,76 @@ python scripts/run_analysis.py --approach 1 \
   --strata all_combined,cd4_combined,cd8_combined
 ```
 
-To fit exploratory V-segment plot cutoffs for each chain and panel:
+Standard runs use dynamic V-segment cutoffs and write them to
+`results/01_set_count/<stratum>/v_thresholds.csv`. Use
+`--v-thresholds fixed` to reproduce the historic 0.6% and 70% graphical cutoffs.
+
+### Refresh thresholds and calibrate Equation 7
+
+With an existing combined baseline, run:
 
 ```bash
-python scripts/run_analysis.py --approach 1 --strata all_combined --v-thresholds adaptive
+python scripts/run_v_updates.py all
 ```
 
-This command refreshes the retention, dumbbell and localization figures for
-TRA and TRB, including the CD4/CD8 composite for `all_combined`. It reuses
-the previous run's depth and structural seed and saves the input count
-snapshots on first use. Preparation sorts aaV before rarefaction so future
-updates are reproducible. Legacy runs that sampled in hash-dependent row order
-can have a different rarefaction draw at the same seed. Use `--v-baseline-results PATH` to select the directory
-containing the previous run's `run_summary.json`. This update skips the
-count tests, MDS, spike-in and seed search. To rebuild the snapshots after
-changing input data, use `python scripts/run_v_updates.py prepare` with
-`--baseline-results` and any required input path overrides.
+If the baseline is missing, first run
+`python scripts/run_analysis.py --approach 1 --strata all_combined`.
+Use `--baseline-results PATH` to point to a baseline directory with
+`run_summary.json` and the TRA and TRB V-ranking CSVs. To rebuild the snapshots
+when the underlying sample files change, use `python scripts/run_v_updates.py prepare`
+with that baseline and any input path overrides.
 
-The Otsu criterion maximizes between-class variance. The fit splits the
-log10 initial share first, then splits retention for the segments above
-that share cutoff. Each side of a split needs at least two segments.
-The initial-share split leaves at least four segments for the retention
-split. The cutoffs describe the observed distribution.
-
-The run starts each fit from the full set of downsampled libraries and omits
-one mouse from g1, g5 or g6, including all its organs and cell subsets.
-Each eligible mouse in those three groups is tried once per panel. A fit is
-skipped if the mouse has no libraries in that panel or its removal would
-empty its group. The group cutoffs are arithmetic means of valid fits in
-percentage units. The dashed lines are the arithmetic mean of the three
-group means, giving all three groups equal weight. If a group has no
-valid fit, the final cutoffs are blank in the CSV. The bubble plot shows
-the measured points without cutoffs or candidate labels. The corresponding
-dumbbell and localization panels mark the selection as unavailable.
-
-Read the mouse, group and final rows in
-`results/01_set_count_adaptive/all_combined/v_thresholds.csv` for the fitted
-cutoffs and the number of attempted and successful fits. Selection and ranking
-use the full-panel data with the aggregated cutoffs.
-Figures and the archive go to `figures/01_set_count_adaptive/` and
-`figures/01_set_count_adaptive.zip`. Standard outputs and spike-in settings
-use the fixed mode.
-
-### Exploratory calibration of Equation 7
-
-After preparing the `all_combined` inputs:
+The `all` command refreshes the V figures, caches the mouse-omission
+evidence and fits Equation 7 for TRA and TRB. To run the steps
+separately:
 
 ```bash
+python scripts/run_v_updates.py thresholds
 python scripts/run_v_updates.py evidence
-python scripts/run_v_updates.py weights --top 10 --ridge 0.1
+python scripts/run_v_updates.py weights
 ```
 
-The evidence stage uses a fixed rarefaction seed and caches single and
-paired mouse exclusions from g1, g5 and g6. All libraries for the omitted
-mice are removed before fitting the raw-UMI edgeR and Fisher tests or
-calculating structural features. Each pair shares one evidence fit.
-The structural term counts unique aaV left after subtracting g2, g4, g5
-and g6.
+`thresholds` refreshes the structural figures and the signed edgeR
+summary from the saved counts and results. The equivalent
+`run_analysis.py --approach 1 --strata all_combined --v-thresholds adaptive`
+command also refreshes only these figures. They are written to
+`figures/01_set_count_adaptive/`. The matching CSV in
+`results/01_set_count_adaptive/all_combined/v_thresholds.csv` includes the
+full-profile thresholds and the sensitivity of those thresholds to the
+omission of each mouse. Both cutoffs are recomputed for each chain and
+panel. Retention is the upper quartile among segments above the median
+initial share.
 
-The weights stage fits two Otsu cutoffs directly on the training profile
-in each fold. It ranks eligible segments by the fraction of the V
-segment's g1 UMI burden in `g1 only` relative to g5 and g6. Ties use the
-number of distinct aaV with that V segment, then the segment name. A fold
-with no valid cutoffs supplies zero eligible segments. The cutoffs from
-the full-cohort plots are descriptive and independent of this procedure.
+`evidence` uses a fixed rarefaction seed for one- and two-mouse training
+exclusions. All libraries from an omitted mouse are removed together.
+The step fits edgeR and Fisher on the raw training counts and caches
+the structural and count-based features. It can reuse the previous
+evidence cache if its inputs and evidence calculations match.
 
-For each shortlisted V segment, the response is the fraction of distinct
-aaV with that V segment on the omitted mouse that also occur in the
-training `g1 only` set. Responses are positive for omitted g1 mice and
-negative for omitted g5 and g6 mice. Rows with no observations for that
-V segment on the omitted mouse are excluded from the fit. The fit uses
-nonnegative ridge regression with standardized predictors and equal total
-weight for each group, equal weight per usable mouse within a group and
-equal weight per observed top V segment within a mouse.
+`weights` fits nonnegative ridge for each chain. The default penalty is
+`--ridge 0.1`. An optional `--top N` limits calibration rows within each
+training fold by decreasing g1-only UMI share. All eligible combined
+V segments still receive an E score. Keep these settings fixed before
+using the outer scores for validation. If a fold lacks biological
+replicates, usable responses from all three groups or valid cutoffs,
+the reports show the reason. At three g1 mice, the double omission of
+g1 leaves too few replicates for the g1 outer model.
 
-For validation, each outer mouse is excluded from both the training
-features and the responses used to fit its weights. The inner fold
-excludes a second mouse, computes its predictors on the remaining mice
-and uses that second mouse only to measure the response. The final
-selection and scoring for the outer fold use its training profile and
-the weights fitted from the inner folds. The outer mouse provides the
-response after selection and scoring. The `*_outer_status.csv` reports
-why an outer fold was skipped. For example, if only three g1 mice have
-usable data, omitting one g1 mouse in each of the outer and inner folds
-can leave too few g1 replicates for edgeR and no g1 calibration responses.
+| Output | What it shows |
+|---|---|
+| `*_coefficients.csv` | The three learned slopes, their weighted standardization and the prediction intercept |
+| `*_calibration_rows.csv` | The training predictors, their standardized values and the observed and fitted signed responses |
+| `*_scored_top_v.csv` | Every combined candidate passing both displayed cutoffs, its E and the three component contributions |
+| `*_outer_scores.csv` | Predictions and observed responses for V segments selected independently in each outer mouse fold |
+| `*_outer_status.csv` | Outer fold availability and per-mouse counts of candidate and observed segments |
+| `calibration_summary.csv` | Fit and scoring status for each chain |
 
-The weights stage reuses evidence when changing `--top` or `--ridge`.
-Prespecify these settings to interpret the outer results as validation.
-The reports in `results/01_v_update_inputs/all_combined/eq7_weights/`
-include outer-fold coefficients and scores. The coefficients in
-`*_coefficients.csv` use the single-exclusion rows from the full cohort.
-The final descriptive shortlist refits the Otsu cutoffs on the full
-cohort using the same fixed rarefaction and the saved full-cohort count
-test verdicts. Use the outer reports for held-out results.
+These tables are under `results/01_v_update_inputs/all_combined/eq7_weights/`.
+The archive `figures/01_set_count_adaptive.zip` includes three new PNGs per
+chain. The input heatmap uses the actual standardized design matrix,
+the response scatter shows points used to learn the weights alongside
+outer mouse checks and the stacked score plot shows each contribution to E.
+The fitted and predicted response adds an intercept to E.
 
 Available keys:
 

@@ -86,13 +86,16 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert 'differential_chains = ("TRA", "TRB") if STRATUM == "all_combined"' in joined
 
 
-def test_adaptive_cutoffs_use_both_axes_and_require_two_segments_on_each_side():
+def test_adaptive_cutoffs_use_upper_quartile_of_the_abundant_half():
     shares = [0.01, 0.04, 1.0, 1.4, 1.7, 2.0, 3.0]
     retention = [99, 99, 27, 36, 82, 86, 90]
     thresholds = fit_plot_thresholds(shares, retention)
-    assert thresholds.initial_share_pct == pytest.approx(0.2)
-    assert thresholds.retention_pct == pytest.approx(59)
-    assert fit_plot_thresholds(shares, [70] * len(shares)) is None
+    assert thresholds.initial_share_pct == pytest.approx(1.4)
+    assert thresholds.retention_pct == pytest.approx(87)
+    assert fit_plot_thresholds(shares, [70] * len(shares)).retention_pct == 70
+    assert fit_plot_thresholds(shares, [0] * len(shares)) is None
+    assert fit_plot_thresholds([1, 2, 3, 4], [0, 0, 0, 1]).retention_pct == pytest.approx(0.75)
+    assert fit_plot_thresholds(list(range(1, 13)), [0] * 11 + [1]).retention_pct == 1
     assert fit_plot_thresholds([], []) is None
 
     profile = pd.DataFrame({
@@ -112,7 +115,7 @@ def test_adaptive_cutoffs_use_both_axes_and_require_two_segments_on_each_side():
     try:
         assert list(bubble.axes[0].lines[0].get_xdata()) == [thresholds.initial_share_pct] * 2
         assert list(bubble.axes[0].lines[1].get_ydata()) == [thresholds.retention_pct] * 2
-        assert genes == ["TRAV6", "TRAV5", "TRAV4"]
+        assert genes == ["TRAV6"]
         assert [tick.get_text() for tick in dumbbell.axes[0].get_yticklabels()] == genes
         assert {tick.get_text() for tick in heatmap.axes[0].get_yticklabels()} == set(genes)
     finally:
@@ -141,7 +144,7 @@ def _load_notebook_function(function_name):
 
 
 @pytest.mark.parametrize("partial_panel", [False, True])
-def test_dropout_cutoffs_omit_whole_mice_and_weight_groups_equally(partial_panel, monkeypatch):
+def test_dropout_cutoffs_omit_whole_mice_and_preserve_primary_panel_fit(partial_panel, monkeypatch):
     group_sizes = {"g1": 2, "g2": 2, "g4": 2, "g5": 3, "g6": 4}
     group_cutoffs = {"g1": PlotThresholds(0.3, 60), "g5": PlotThresholds(0.6, 70),
                      "g6": PlotThresholds(1.2, 90)}
@@ -161,31 +164,38 @@ def test_dropout_cutoffs_omit_whole_mice_and_weight_groups_equally(partial_panel
     if partial_panel:
         panels["g1"] = cohort["g1"].iloc[:, :4]
 
+    full_cutoff = PlotThresholds(0.5, 75)
+
     def summarize(held_out):
         changed = [group for group in panels if held_out[group] is not panels[group]]
-        assert len(changed) == 1
-        group = changed[0]
-        removed = panels[group].columns.difference(held_out[group].columns)
-        assert len(removed) == 4
-        assert len({sample.rsplit("_", 2)[0] for sample in removed}) == 1
-        share, retention = group_cutoffs[group]
-        return {"initial_share": share / 100, "retention": retention / 100}
+        if changed:
+            assert len(changed) == 1
+            group = changed[0]
+            removed = panels[group].columns.difference(held_out[group].columns)
+            assert len(removed) == 4
+            assert len({sample.rsplit("_", 2)[0] for sample in removed}) == 1
+            share, retention = group_cutoffs[group]
+        else:
+            share, retention = full_cutoff
+        return pd.DataFrame({"initial_share": [share / 100], "retention": [retention / 100]})
 
     monkeypatch.setattr("src.structural_v.structural_summary", summarize)
-    monkeypatch.setattr("src.v_thresholds.fit_plot_thresholds", PlotThresholds)
+    monkeypatch.setattr("src.v_thresholds.fit_plot_thresholds",
+                        lambda share, retention: PlotThresholds(share.iloc[0], retention.iloc[0]))
     result, records = fit_mouse_dropout_thresholds(panels, pd.DataFrame(metadata), cohort_tables=cohort)
     mice = [row for row in records if row["level"] == "mouse"]
     assert len(mice) == 9
     assert {row["omitted_group"] for row in mice} == {"g1", "g5", "g6"}
+    assert result == full_cutoff
+    assert records[-1]["status"] == "fitted_on_displayed_profile"
+    assert records[-1]["n_selected"] == 1
+    groups = {row["omitted_group"]: row for row in records if row["level"] == "group"}
+    assert groups["g5"]["n_fitted"] == 3
+    assert groups["g6"]["retention_pct"] == 90
     if partial_panel:
-        assert result is None
-        assert records[-1]["initial_share_pct"] is None
-        assert records[-1]["retention_pct"] is None
+        assert groups["g1"]["n_fitted"] == 0
         statuses = {row["status"] for row in mice if row["omitted_group"] == "g1"}
         assert statuses == {"no_panel_libraries", "skipped_empty_group"}
-    else:
-        assert result == pytest.approx((0.7, 220 / 3))
-        assert records[-1]["n_fitted"] == 9
 
 
 def test_article_score_and_entropy_use_retention_and_four_g1_regions():

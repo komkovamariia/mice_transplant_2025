@@ -34,6 +34,12 @@ To run only the combined repertoire:
 python scripts/run_analysis.py --approach 1 --strata all_combined
 ```
 
+Approach 1 fits separate empirical cutoffs for each chain and panel by
+default. To refresh the combined study's V figures and fit the Equation 7
+weights from an existing baseline, run
+`python scripts/run_v_updates.py all`. See [RUN_GUIDE.md](RUN_GUIDE.md)
+for the input and output paths.
+
 To run the combined, pooled CD4 and pooled CD8 strata:
 
 ```bash

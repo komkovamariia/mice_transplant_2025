@@ -341,7 +341,7 @@ def archive_first_approach_figures(*, output_name="01_set_count") -> Path:
 
 def verify_first_approach_outputs(
     selected_strata: list[str], *, spike_run=None, spike_case=None, spike_chain="TRA",
-    output_name="01_set_count",
+    output_name="01_set_count", threshold_mode=None,
 ) -> None:
     """Check the required outputs for completed Approach 1 strata."""
     from src.article_figures import ARTICLE_FIGURES, article_name
@@ -390,6 +390,18 @@ def verify_first_approach_outputs(
         summary_path = required[2]
         if summary_path.is_file():
             run_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            if threshold_mode is not None and run_summary.get("v_threshold_mode") != threshold_mode:
+                raise RuntimeError(f"Unexpected V-segment threshold mode for {stratum}: {run_summary}")
+            if threshold_mode == "adaptive":
+                from src.v_thresholds import THRESHOLD_METHOD
+
+                threshold_path = result_dir / "v_thresholds.csv"
+                if not threshold_path.is_file():
+                    missing.append(threshold_path)
+                else:
+                    thresholds = pd.read_csv(threshold_path)
+                    if thresholds.empty or not thresholds["method"].eq(THRESHOLD_METHOD).all():
+                        raise RuntimeError(f"Unexpected V-segment threshold method in {threshold_path}.")
             edger_status = str(run_summary.get("edger_status", "missing"))
             if edger_status != "edgeR quasi-likelihood model fitted successfully.":
                 raise RuntimeError(
@@ -668,8 +680,9 @@ def main() -> int:
     parser.add_argument("--clonoset-index", type=Path)
     parser.add_argument("--working-dir", type=Path)
     parser.add_argument("--mode", choices=("standard", "spike-in"), default="standard")
-    parser.add_argument("--v-thresholds", choices=("fixed", "adaptive"), default="fixed",
-                        help="Update only V-segment figures from cached structural inputs.")
+    parser.add_argument("--v-thresholds", choices=("fixed", "adaptive"),
+                        help="Standard runs fit dynamic cutoffs by default. Use fixed for the old cutoffs "
+                             "or adaptive to refresh V-segment figures from a previous run.")
     parser.add_argument("--v-baseline-results", type=Path, help="Existing stratum directory for adaptive figure updates.")
     parser.add_argument("--spike-chain", choices=("TRA", "TRB"), default="TRA")
     parser.add_argument("--spike-v-gene", help="Optional exact noncandidate V annotation.")
@@ -709,6 +722,7 @@ def main() -> int:
             update_threshold_figures(root, stratum)
         return 0
     output_name = "01_set_count"
+    threshold_mode = arguments.v_thresholds or "adaptive"
     base_environment = _base_environment(arguments)
     if arguments.mode == "spike-in" and arguments.spike_stage != "all":
         sys.path.insert(0, str(root))
@@ -747,7 +761,7 @@ def main() -> int:
                     environment = {
                         **base_environment,
                         "MICE_TCR_MODE": "standard",
-                        "MICE_TCR_V_THRESHOLDS": arguments.v_thresholds,
+                        "MICE_TCR_V_THRESHOLDS": threshold_mode,
                         "MICE_TCR_STRATUM": stratum,
                         "MICE_TCR_FINALIZE_SUMMARY": (
                             "1" if final_complete_run else "0"
@@ -762,7 +776,7 @@ def main() -> int:
                     pipeline_logger.write(
                         f"STRATUM {stratum_position}/{len(selected_strata)} DONE | {stratum}"
                     )
-                verify_first_approach_outputs(selected_strata, output_name=output_name)
+                verify_first_approach_outputs(selected_strata, output_name=output_name, threshold_mode=threshold_mode)
                 archive_path = archive_first_approach_figures(output_name=output_name)
                 pipeline_logger.write(
                     f"FIGURE ARCHIVE CREATED | {archive_path.relative_to(root)}"

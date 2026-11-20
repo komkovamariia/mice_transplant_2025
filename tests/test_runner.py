@@ -1,3 +1,4 @@
+import sys
 import zipfile
 
 import matplotlib.pyplot as plt
@@ -5,6 +6,7 @@ import nbformat
 import pytest
 
 from src.figures import save_figure
+from scripts import run_analysis
 from scripts.run_analysis import (
     STRATUM_RUNS,
     _cell_description,
@@ -105,6 +107,20 @@ def test_adaptive_outputs_preserve_fixed_results(tmp_path, monkeypatch):
     assert archive.name == "01_set_count_adaptive.zip"
     assert fixed.read_bytes() == b"fixed"
     assert result.read_text() == "fixed\n"
+
+
+@pytest.mark.parametrize(("options", "mode"), [([], "adaptive"), (["--v-thresholds", "fixed"], "fixed")])
+def test_standard_run_uses_dynamic_cutoffs_unless_fixed_is_requested(tmp_path, monkeypatch, options, mode):
+    monkeypatch.setattr(sys, "argv", ["run_analysis.py", "--strata", "all_combined", *options])
+    monkeypatch.setattr(run_analysis, "repo_root", lambda: tmp_path)
+    executed = []
+    monkeypatch.setattr(run_analysis, "execute_notebook", lambda *args, **kwargs: executed.append(kwargs))
+    verified = []
+    monkeypatch.setattr(run_analysis, "verify_first_approach_outputs", lambda *args, **kwargs: verified.append(kwargs))
+    monkeypatch.setattr(run_analysis, "archive_first_approach_figures", lambda **_: tmp_path / "figures.zip")
+    assert run_analysis.main() == 0
+    assert [run["environment"]["MICE_TCR_V_THRESHOLDS"] for run in executed] == [mode]
+    assert [run["threshold_mode"] for run in verified] == [mode]
 
 
 def test_publication_figure_output_is_png_only_and_chain_specific(tmp_path, monkeypatch):

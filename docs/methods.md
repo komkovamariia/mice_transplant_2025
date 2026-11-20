@@ -102,33 +102,77 @@ Ties use significant-aaV counts, exclusive-aaV counts and V name.
 
 ### Calibrated Equation 7 in the combined stratum
 
-The calibration fits three nonnegative coefficients. Its predictors are
-the edgeR and Fisher indicators for a positive mean effect among
-FDR-significant aaV and the natural log of one plus the number of unique
-residual aaV. A row represents a V segment and an omitted mouse. Its
-response is the fraction of that mouse's unique aaV with the segment
-that occur in the training `g1 only` set. The fraction is signed
-positive for g1 and negative for g5 and g6. Rows without observations
-for the segment in the omitted mouse are excluded.
+The three predictors are edgeR and Fisher indicators for a positive mean
+effect among FDR-significant aaV and the natural log of one plus the number
+of unique residual aaV. The calibration omits every triplet consisting of
+one g1, one g5 and one g6 mouse. With 3, 5 and 5 mice, this gives 75 training
+splits with 2, 4 and 4 animals in those groups. All libraries of each omitted
+mouse stay together. The other groups retain their original role in set
+subtraction. The structural and count-based inputs and both dynamic cutoffs
+are computed from the remaining training samples. Calibrating at a fixed
+per-library rarefaction seed avoids representative-seed selection on these
+folds.
+
+A calibration row represents a split, an omitted mouse and a V segment
+passing both training cutoffs. The response divides the number of that
+mouse's aaV using the segment and present in the training g1-only set by the
+number of its observed aaV using the segment. The training g1-only set is
+defined relative to g5 and g6. The fraction is signed positive for g1 and
+negative for g5 and g6. An unobserved V segment has a missing response.
 
 The objective is weighted squared error plus a ridge penalty on the
-slopes in standardized predictor space. Each group has equal total
-weight, each contributing mouse has equal weight within its group and
-each usable row has equal weight within its mouse. Constant predictors
-receive zero coefficients. Back-transformed slopes define the additive
-ranking score `E`. The fitted response adds a separate, unpenalized
-intercept. The response and metric describe overlaps in this cohort.
+slopes in standardized predictor space. Weight is apportioned equally to
+groups, contributing mice within a group, eligible splits of a mouse and
+usable V segments within that split. Constant predictors receive zero
+slopes. Back-transformed slopes define the additive score `E` in the
+original units. A separate unpenalized intercept is added for response
+prediction. The final weights score every combined segment passing the
+cutoffs of the displayed rarefaction profile.
 
-In outer validation, both the outer and inner mouse are excluded
-from the structural and count calculations for every calibration row.
-The cutoffs and predictor standardization use the respective training
-data. The outer scores then use predictors computed on all mice except
-the outer test mouse. With three g1 mice, holding out two leaves one
-g1 replicate and prevents calibration of outer g1 folds. The
-full-cohort fit uses one-mouse omissions. Its learned coefficients are
-applied to every candidate passing the cutoffs in the same rarefaction
-profile used for the displayed combined figures. See
-[RUN_GUIDE.md](../RUN_GUIDE.md) for the three diagnostic plots.
+The penalty is selected on 10 potential control-mouse validation folds.
+For each held g5 or g6 mouse, the inner training folds omit one further
+mouse at a time for calibration. Both mice are excluded before constructing
+the structural and statistical features for that inner fit. When predicting
+the held control mouse, predictors and candidate cutoffs use only its
+complement. The five ridge penalties are evaluated by mean squared error,
+averaged first by V within a mouse, then by mouse within group and equally
+across the two control groups. The largest candidate within one estimated
+standard error of the minimum is selected. This is a regularization heuristic
+for dependent folds. The code reports an intercept-only reference. If a
+comparison across the grid lacks two evaluable mice per control group,
+the preset penalty is 0.1. A g1 tuning holdout with an additional g1 omission
+leaves one mouse and violates edgeR's replication requirement. The g1
+responses participate in the final triplet calibration.
+
+### Independent TRB transfer
+
+The external panel uses Tereshchenko et al. (2023), BioProject
+[PRJNA954716](https://www.ebi.ac.uk/ena/browser/view/PRJNA954716).
+Three intact BALB/c and four BALB/c mice given C57BL/6 skin grafts
+provide the two conditions. Both are bulk libraries from splenic CD4+
+cells. Paired reads are assembled independently with TRUST4 v1.1.7 and
+the bundled mouse IMGT reference in bulk non-UMI mode. Productive TRB aaV
+are collapsed at V-gene resolution and use integer read-fragment counts.
+
+The transfer reference restricts the internal data to splenic CD4+
+libraries of g1 and g5. Each cohort uses an intact versus allograft count
+contrast and subtracts its corresponding graft group only. Structural
+rarefaction uses the original internal depth in UMI and the same nominal
+depth in external read fragments. Both cohorts use the fitted combined TRB
+coefficients and the cutoffs obtained from the internal reference.
+
+The mouse-level endpoint compares frozen internal predictions with signed
+aaV recovery from the internal intact-only set in each external mouse.
+The mean absolute error is averaged across segments within each mouse,
+then within each group and equally across groups, with an intercept-only
+reference. The cohort-level endpoint compares the selected lists and
+scores after re-estimating edgeR, Fisher and residual counts on the external
+cohort. A segment passing exactly one list contributes one unit to loss.
+A shared segment contributes the absolute score difference divided by its
+larger score, or zero if both scores are zero. The loss is averaged across
+the union. The design also reports Jaccard overlap, absolute shifts for
+shared segments and group-level coverage. See [RUN_GUIDE.md](../RUN_GUIDE.md)
+for commands and outputs.
 
 ## Stability checks
 

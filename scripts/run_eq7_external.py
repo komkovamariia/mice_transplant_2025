@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Prepare the independent PRJNA954716 cohort or test frozen Equation 7 weights."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from urllib.request import urlopen
+
+import numpy as np
+import pandas as pd
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.run_analysis import repo_root
+from scripts.run_v_updates import _metadata, _write_csv, calibration_input_sha256, input_dir
+from src.eq7_calibration import FEATURES, CalibrationUnavailable, score_candidates
+from src.eq7_external import (
+    MATCHED_GROUPS, compare_shortlists, matched_panel, mouse_prediction_losses, mouse_predictions,
+    panel_cutoffs, summarize_transfer,
+)
+from src.runtime import configure_runtime
+from src.spike_in import load_snapshot_tables
+
+
+STUDY = "PRJNA954716"
+ASSEMBLER = "TRUST4 v1.1.7"
+CHAIN = "TRB"
+ENA = "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR242"
+PRODUCTIVE_CDR3 = r"[ACDEFGHIKLMNPQRSTVWY]+"
+V_GENE = re.compile(r"TRBV\d+(?:-\d+)?")
+
+
+def checksum(path, algorithm="sha256"):
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, algorithm).hexdigest()
+
+
+def fetch_read(reads, run, mate, expected):
+    path = reads / f"{run}_{mate}.fastq.gz"
+    if path.is_file() and checksum(path, "md5") == expected:
+        return path
+    url = f"{ENA}/0{run[-2:]}/{run}/{path.name}"
+    pending = path.with_suffix(".tmp")
+    with urlopen(url, timeout=90) as response, pending.open("wb") as target:
+        shutil.copyfileobj(response, target)
+    if checksum(pending, "md5") != expected:
+        pending.unlink()
+        raise ValueError(f"ENA checksum mismatch for {path.name}.")
+    pending.replace(path)
+    return path
+
+
+def prepare_public(work, metadata, trust4, reference, threads):
+    reads, reports = work / "reads", work / "trust4_reports"
+    reads.mkdir(parents=True, exist_ok=True)
+    reports.mkdir(parents=True, exist_ok=True)
+    for sample in metadata.itertuples(index=False):
+        run = sample.sample_id
+        report_path = reports / f"{run}_report.tsv"
+        fastqs = [
+            fetch_read(reads, run, mate, expected)
+            for mate, expected in enumerate((sample.fastq_md5_r1, sample.fastq_md5_r2), start=1)
+        ]
+        provenance = {
+            "assembler": ASSEMBLER, "reference_sha256": checksum(reference),
+            "run_trust4_sha256": checksum(trust4),
+            "trust4_binary_sha256": checksum(trust4.with_name("trust4")),
+            "fastq_md5": [sample.fastq_md5_r1, sample.fastq_md5_r2],
+        }
+        provenance_path = reports / f"{run}_assembly.json"
+        existing = json.loads(provenance_path.read_text()) if provenance_path.is_file() else {}
+        if report_path.is_file() and existing == {**provenance, "report_sha256": checksum(report_path)}:
+            continue
+        print(f"Assembling {run} with {ASSEMBLER}", flush=True)
+        with TemporaryDirectory(prefix=f"{run}_", dir=reports) as temporary:
+            command = [
+                str(trust4), "-f", str(reference), "--ref", str(reference),
+                "-1", str(fastqs[0]), "-2", str(fastqs[1]), "--repseq", "-o", run,
+                "--od", temporary, "--clean", "1", "-t", str(threads),
+            ]
+            with (reports / f"{run}.log").open("w") as log:
+                subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+            if ASSEMBLER not in (reports / f"{run}.log").read_text():
+                raise ValueError(f"Expected {ASSEMBLER} in the assembly log for {run}.")
+            assembly = Path(temporary) / report_path.name
+            read_trust4_report(assembly, run)
+            assembly.replace(report_path)
+        _write_json({**provenance, "report_sha256": checksum(report_path)}, provenance_path)
+
+
+def unambiguous_v(call):
+    genes = {hit.split("*", 1)[0].strip() for hit in re.split(r"[|,;]", call)}
+    if len(genes) != 1:
+        return ""
+    gene = genes.pop()
+    return gene if V_GENE.fullmatch(gene) else ""
+
+
+def read_trust4_report(path, run):
+    report = pd.read_csv(path, sep="\t", usecols=["#count", "CDR3aa", "V"], keep_default_na=False)
+    numeric = pd.to_numeric(report["#count"], errors="raise")
+    if not (numeric.gt(0) & numeric.mod(1).eq(0)).all():
+        raise ValueError(f"Expected positive integer read counts for {run}.")
+    report["v_gene"] = report["V"].map(unambiguous_v)
+    functional = report["CDR3aa"].str.fullmatch(PRODUCTIVE_CDR3) & report["v_gene"].ne("")
+    counts = report.loc[functional].groupby(["CDR3aa", "v_gene"])["#count"].sum().astype("int64")
+    if counts.empty:
+        raise ValueError(f"No productive TRB aaV with a unique V call in {run}.")
+    counts.index = pd.Index(counts.index.to_list(), tupleize_cols=False)
+    qc = {
+        "sample_id": run, "n_trust4_rows": len(report), "n_productive_trb_aav": len(counts),
+        "n_productive_trb_read_fragments": int(counts.sum()), "report_sha256": checksum(path),
+    }
+    return counts.rename(run), qc
+
+
+def external_raw(work, metadata):
+    raw, audit = {}, []
+    for group, rows in metadata.groupby("group_no"):
+        libraries = []
+        for run in rows["sample_id"]:
+            path = work / "trust4_reports" / f"{run}_report.tsv"
+            counts, qc = read_trust4_report(path, run)
+            libraries.append(counts)
+            audit.append(qc)
+        raw[group] = pd.concat(libraries, axis=1).fillna(0).astype("int64").sort_index()
+    return raw, pd.DataFrame(audit)
+
+
+def _write_json(record, path):
+    pending = path.with_suffix(".json.tmp")
+    pending.write_text(json.dumps(record, indent=2, allow_nan=False) + "\n")
+    pending.replace(path)
+
+
+def test_public(root, work, metadata):
+    from src.article_figures import ARTICLE_FONTS
+    from src.eq7_figures import plot_external_comparison, plot_external_predictions
+    from src.figures import apply_article_style
+    import matplotlib.pyplot as plt
+
+    cache = input_dir(root, "all_combined")
+    coefficients = cache / "eq7_weights" / "trb_coefficients.csv"
+    if not coefficients.is_file():
+        raise FileNotFoundError("Run scripts/run_v_updates.py all to fit the internal weights before testing.")
+    weights = pd.read_csv(coefficients)
+    if set(weights["term"]) != set(FEATURES) or len(weights) != len(FEATURES):
+        raise CalibrationUnavailable("A complete frozen TRB fit is required for the external test.")
+    if (not np.isfinite(weights[["weight", "intercept", "baseline_prediction"]]).all().all()
+            or weights["weight"].lt(0).any()):
+        raise CalibrationUnavailable("The frozen TRB fit has invalid coefficients.")
+    if ("calibration_input_sha256" not in weights or
+            not weights["calibration_input_sha256"].eq(calibration_input_sha256(cache, CHAIN)).all()):
+        raise CalibrationUnavailable("The frozen TRB weights do not match the current internal input snapshots.")
+    seeds = json.loads((cache / "v_input_seeds.json").read_text())
+    training = _metadata(cache)
+    internal_raw = load_snapshot_tables(cache / "raw", CHAIN, training)
+    matched = training.loc[
+        training["_tissue"].eq("spleen") & training["_cell_subset"].eq("cd4")
+        & training["group_no"].isin(MATCHED_GROUPS)
+    ]
+    settings = {"depth": seeds["depth"], "seed": seeds["calibration_seed"], "n_workers": configure_runtime()}
+    internal, reference, train_depth = matched_panel(internal_raw, matched, **settings)
+    cutoffs = panel_cutoffs(internal)
+    if cutoffs is None:
+        raise CalibrationUnavailable("The matched internal reference did not yield valid cutoffs.")
+    train_scores = score_candidates(internal, weights, frozen_cutoffs=cutoffs)
+    external_counts, qc = external_raw(work, metadata)
+    external, test_tables, test_depth = matched_panel(external_counts, metadata, **settings)
+    test_scores = score_candidates(external, weights, frozen_cutoffs=cutoffs)
+    predictions = mouse_predictions(reference, train_scores, test_tables, metadata, weights["baseline_prediction"].iat[0])
+    losses = mouse_prediction_losses(predictions, metadata)
+    compared = compare_shortlists(train_scores, test_scores, internal, external)
+
+    output = work / "validation"
+    output.mkdir(parents=True, exist_ok=True)
+    for name, frame in (
+        ("train_reference_scores", train_scores), ("external_scores", test_scores),
+        ("external_mouse_predictions", predictions), ("external_mouse_losses", losses),
+        ("external_segment_comparison", compared), ("external_library_qc", metadata.merge(qc, on="sample_id")),
+        ("train_reference_depth", train_depth),
+        ("external_depth", test_depth.rename(columns={
+            "functional_umi_before": "read_fragments_before", "target_umi": "target_read_fragments",
+            "functional_umi_after": "read_fragments_after",
+        })),
+    ):
+        _write_csv(frame, output / f"{name}.csv")
+    _write_csv(weights, output / "frozen_trb_coefficients.csv")
+    test_summary = {
+        "study": STUDY, "chain": CHAIN, "tra_status": "not_sequenced_in_external_cohort",
+        "external_conditions": {"g1": "intact BALB/c", "g5": "C57BL/6 skin graft in BALB/c"},
+        "panel": "splenic CD4+ T cells", "external_counts": "read_fragments", "internal_counts": "UMI",
+        "depth": seeds["depth"], "rarefaction_seed": seeds["calibration_seed"],
+        "frozen_gate": cutoffs._asdict(), "training_coefficients_sha256": checksum(coefficients),
+        **summarize_transfer(losses, compared),
+    }
+    _write_json(test_summary, output / "external_summary.json")
+    apply_article_style()
+    plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ARTICLE_FONTS, "axes.grid": False})
+    for name, figure in (
+        ("external_mouse_predictions", plot_external_predictions(predictions, losses, test_summary)),
+        ("external_segment_comparison", plot_external_comparison(compared, test_summary)),
+    ):
+        figure.savefig(output / f"{name}.png", dpi=300, facecolor="white")
+        plt.close(figure)
+    print(f"External validation outputs written to {output}")
+
+
+def main():
+    root = repo_root()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("stage", choices=("prepare", "test"))
+    parser.add_argument("--work-dir", type=Path, default=root / "results" / "eq7_external" / STUDY)
+    parser.add_argument("--trust4", type=Path, help="Compiled TRUST4 v1.1.7 run-trust4 path.")
+    parser.add_argument("--reference", type=Path, help="Mouse IMGT reference bundled with TRUST4.")
+    parser.add_argument("--threads", type=int, default=4)
+    args = parser.parse_args()
+    work = args.work_dir.resolve()
+    metadata = pd.read_csv(root / "config" / "prjna954716_samples.csv")
+    if args.stage == "prepare":
+        if args.trust4 is None or args.threads < 1:
+            parser.error("prepare requires --trust4 and a positive --threads value")
+        trust4 = args.trust4.resolve()
+        reference = args.reference or trust4.parent / "mouse" / "mouse_IMGT+C.fa"
+        prepare_public(work, metadata, trust4, reference.resolve(), args.threads)
+    else:
+        test_public(root, work, metadata)
+
+
+if __name__ == "__main__":
+    main()

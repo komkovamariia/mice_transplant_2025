@@ -45,8 +45,8 @@ def test_login_defaults_to_one_and_missing_task_allocation_is_conservative(cpu_e
 def test_parallel_fisher_matches_historical_exact_tests_and_input_order(monkeypatch):
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     rng = np.random.default_rng(1031)
-    g1 = pd.Series(np.r_[0, 0, 100, rng.integers(0, 50, 61)], dtype=float)
-    ctrl = pd.Series(np.r_[0, 100, 0, rng.integers(0, 50, 61)], dtype=float)
+    g1 = pd.Series(np.r_[0, 0, 100, 100, rng.integers(0, 50, 61)], dtype=float)
+    ctrl = pd.Series(np.r_[0, 100, 0, 0, rng.integers(0, 50, 61)], dtype=float)
     ids = [f"aaV_{i}" for i in range(len(g1))]
     expected = []
     for feature, a, b in zip(ids, g1, ctrl):

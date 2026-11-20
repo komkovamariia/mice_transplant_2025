@@ -8,9 +8,10 @@ import hashlib
 import inspect
 import json
 import sys
-from itertools import combinations
+from itertools import chain as concatenate, combinations, product
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 if __package__ in (None, ""):
@@ -19,6 +20,7 @@ if __package__ in (None, ""):
 from scripts.run_analysis import (
     _base_environment, archive_first_approach_figures, execute_notebook, repo_root,
 )
+from src.eq7_calibration import DEFAULT_RIDGE, RIDGE_GRID
 from src.spike_in import load_snapshot_tables
 from src.v_thresholds import DROPOUT_GROUPS, THRESHOLD_METHOD, fit_mouse_dropout_thresholds
 
@@ -162,6 +164,16 @@ def calibration_dir(root, cache, chain):
     return cache / "calibration" / chain / digest.hexdigest()
 
 
+def calibration_input_sha256(cache, chain):
+    digest = hashlib.sha256()
+    for path in (
+        cache / "v_input_seeds.json", cache / "mouse_metadata.csv",
+        cache / "raw" / "count_snapshots" / f"{chain}_manifest.json",
+    ):
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def evidence_dir(root, cache, chain):
     from src.eq7_calibration import attach_mouse_response, training_evidence, with_structural_fields
     from src.structural_v import structural_remainder, subset_v_tables, v_region_proportions
@@ -200,47 +212,63 @@ def build_chain_evidence(directory, tables, raw, metadata, workers):
         subset_v_tables({group: tables[group]}, ids_by_mouse[(group, mouse)])[group]
         for group, mouse in mice
     ]
-    records, singles, pairs = [], [], []
-    for size in (1, 2):
-        for split in combinations(range(len(mice)), size):
-            i, *other = split
-            j = other[0] if other else -1
-            excluded = [mice[index] for index in split]
-            affected_groups = {group for group, _ in excluded}
+    indices = list(range(len(mice)))
+    by_group = [[index for index, key in enumerate(mice) if key[0] == group] for group in DROPOUT_GROUPS]
+    folds = concatenate(combinations(indices, 1), combinations(indices, 2), product(*by_group))
+    by_size = {1: [], 2: [], 3: []}
+    records, stratified = [], []
+    for split in folds:
+        excluded = [mice[index] for index in split]
+        name = "split_" + "_".join(map(str, split))
+        cache_path = directory / f"{name}.csv"
+        fit = None
+        if any(held[index].empty for index in split):
+            status = "no eligible libraries for an omitted mouse"
+        elif cache_path.is_file():
+            fit = pd.read_csv(cache_path, dtype={"heldout_mouse": str})
+            status = "fitted"
+        else:
             excluded_ids = {sample for key in excluded for sample in ids_by_mouse[key]}
             retained_ids = metadata.loc[~metadata["sample_id"].isin(excluded_ids), "sample_id"]
-            remaining = subset_v_tables({group: tables[group] for group in affected_groups}, retained_ids)
-            cache_path = directory / ("split_" + "_".join(map(str, split)) + ".csv")
-            if any(held[index].empty for index in split):
-                status = "no eligible libraries for an omitted mouse"
-            elif any(table.empty for table in remaining.values()):
+            affected = {group: tables[group] for group, _ in excluded}
+            remaining = subset_v_tables(affected, retained_ids)
+            if any(table.empty for table in remaining.values()):
                 status = "omission emptied a structural group"
-            elif cache_path.is_file():
-                rows = pd.read_csv(cache_path, dtype={"heldout_mouse": str})
-                status = "fitted"
             else:
                 training = {**tables, **remaining}
                 evidence, status = training_evidence(training, excluded, counts, units, n_workers=workers)
                 if evidence is not None:
-                    rows = pd.concat([
+                    fit = pd.concat([
                         attach_mouse_response(evidence, training, held[index], *mice[index]).assign(
-                            heldout_fold=index, outer_fold=j if index == i else i,
+                            heldout_fold=index, evidence_split=name,
+                            outer_fold=next(other for other in split if other != index) if len(split) == 2 else -1,
                         )
                         for index in split
                     ], ignore_index=True)
-                    _write_csv(rows, cache_path)
-            if status == "fitted":
-                (pairs if other else singles).append(rows)
+                    _write_csv(fit, cache_path)
+        if fit is not None:
+            by_size[len(split)].append(fit)
+
+        if len(split) == 3:
+            mice_by_group = {f"omitted_{group}": mouse for group, mouse in excluded}
+            stratified.append({"evidence_split": name, **mice_by_group, "status": status})
+        else:
+            i = split[0]
+            j = split[-1] if len(split) == 2 else -1
             records.append({
                 "fold": i, "paired_fold": j, "group": mice[i][0], "mouse": mice[i][1],
-                "paired_group": mice[j][0] if other else "", "paired_mouse": mice[j][1] if other else "",
-                "status": status,
+                "paired_group": mice[j][0] if j >= 0 else "", "paired_mouse": mice[j][1] if j >= 0 else "",
+                "evidence_split": name, "status": status,
             })
-            print(f"Omitted {', '.join(mouse for _, mouse in excluded)}: {status}", flush=True)
+        print(f"Omitted {', '.join(f'{group}/{mouse}' for group, mouse in excluded)}: {status}", flush=True)
 
-    empty = pd.DataFrame(columns=["heldout_fold", "outer_fold"])
-    _write_csv(pd.concat(singles, ignore_index=True) if singles else empty, directory / "fold_evidence.csv")
-    _write_csv(pd.concat(pairs, ignore_index=True) if pairs else empty, directory / "inner_fold_evidence.csv")
+    for size, filename in enumerate(("fold_evidence", "inner_fold_evidence", "stratified_fold_evidence"), start=1):
+        rows = by_size[size]
+        empty = pd.DataFrame(columns=["heldout_fold", "outer_fold", "evidence_split"])
+        _write_csv(pd.concat(rows, ignore_index=True) if rows else empty, directory / f"{filename}.csv")
+    _write_csv(pd.DataFrame(stratified, columns=[
+        "evidence_split", *(f"omitted_{group}" for group in DROPOUT_GROUPS), "status",
+    ]), directory / "stratified_fold_status.csv")
     _write_csv(pd.DataFrame(records), directory / "fold_status.csv")
 
 
@@ -266,64 +294,114 @@ def build_weight_evidence(root, cache):
         if status.is_file():
             print(f"Reusing {chain} evidence in {directory}", flush=True)
         else:
-            print(f"Preparing {chain} single and paired omissions", flush=True)
+            print(f"Preparing {chain} calibration and tuning splits", flush=True)
             build_chain_evidence(directory, tables, raw, metadata, workers)
 
 
 def fit_outer_weights(directory, output, prefix, top, ridge):
-    from src.eq7_calibration import CalibrationUnavailable, calibrate_weights, score_candidates
+    from src.eq7_calibration import (
+        RESPONSE_COLUMNS, CalibrationUnavailable, fit_selected, score_candidates, select_calibration_rows,
+    )
 
     outer_rows = pd.read_csv(directory / "fold_evidence.csv", dtype={"heldout_mouse": str})
     inner_rows = pd.read_csv(directory / "inner_fold_evidence.csv", dtype={"heldout_mouse": str})
     fold_status = pd.read_csv(directory / "fold_status.csv", dtype={"mouse": str})
-    outcomes = ["heldout_n_v", "heldout_n_recovered", "response"]
-    records, coefficients, scores = [], [], []
+    penalties = RIDGE_GRID if ridge is None else (ridge,)
+    records, coefficients, scores, errors = [], [], [], []
     for fold in fold_status.loc[fold_status["paired_fold"].eq(-1)].itertuples(index=False):
         key = {"outer_fold": fold.fold, "outer_group": fold.group, "outer_mouse": fold.mouse}
         status = fold.status
         n_candidates = n_observed = 0
         if status == "fitted":
             try:
-                weights, _ = calibrate_weights(inner_rows.loc[inner_rows["outer_fold"].eq(fold.fold)], top, ridge)
+                selected = select_calibration_rows(inner_rows.loc[inner_rows["outer_fold"].eq(fold.fold)], top)
             except CalibrationUnavailable as exc:
                 status = str(exc)
             else:
                 evidence = outer_rows.loc[outer_rows["heldout_fold"].eq(fold.fold)]
-                candidates = score_candidates(evidence.drop(columns=outcomes), weights)
-                candidates = candidates.join(evidence.set_index("v_gene")[outcomes], on="v_gene", validate="1:1")
-                candidates = candidates.assign(**key)
+                for penalty in penalties:
+                    weights, _ = fit_selected(selected, penalty)
+                    candidates = score_candidates(evidence.drop(columns=RESPONSE_COLUMNS), weights)
+                    candidates = candidates.join(
+                        evidence.set_index("v_gene")[RESPONSE_COLUMNS], on="v_gene", validate="1:1",
+                    ).assign(**key, ridge=penalty)
+                    observed = candidates.dropna(subset=["response"])
+                    baseline_prediction = weights["baseline_prediction"].iat[0]
+                    if not observed.empty:
+                        errors.append({
+                            **key, "ridge": penalty, "n_observed": len(observed),
+                            "mse": ((observed["response"] - observed["predicted_response"])**2).mean(),
+                            "baseline_mse": ((observed["response"] - baseline_prediction)**2).mean(),
+                        })
+                    coefficients.append(weights.assign(**key, ridge=penalty))
+                    scores.append(candidates)
                 n_candidates = len(candidates)
-                n_observed = int(candidates["response"].notna().sum())
+                n_observed = len(observed)
                 if n_observed:
                     status = "scored"
                 elif n_candidates:
                     status = "No selected V segments observed in the outer mouse."
                 else:
                     status = "No candidates passed the outer training cutoffs."
-                coefficients.append(weights.assign(**key))
-                scores.append(candidates)
         records.append({**key, "status": status, "n_candidates": n_candidates, "n_observed": n_observed})
 
     status = pd.DataFrame(records)
     _write_csv(status, output / f"{prefix}_outer_status.csv")
-    empty_weights = pd.DataFrame(columns=["outer_fold", "outer_group", "outer_mouse", "term", "weight", "intercept"])
+    mouse_errors = pd.DataFrame(errors, columns=[
+        "outer_fold", "outer_group", "outer_mouse", "ridge", "n_observed", "mse", "baseline_mse",
+    ])
+    curve, chosen, selection = select_ridge(mouse_errors, ridge)
+    _write_csv(mouse_errors, output / f"{prefix}_ridge_mouse_losses.csv")
+    _write_csv(curve, output / f"{prefix}_ridge_grid.csv")
+    empty_weights = pd.DataFrame(columns=[
+        "outer_fold", "outer_group", "outer_mouse", "term", "weight", "intercept", "ridge",
+    ])
     empty_scores = pd.DataFrame(columns=[
-        "outer_fold", "outer_group", "outer_mouse", "v_gene", "E", "response", "predicted_response",
+        "outer_fold", "outer_group", "outer_mouse", "v_gene", "E", "response", "predicted_response", "ridge",
     ])
     predictions = pd.concat(scores, ignore_index=True) if scores else empty_scores
-    _write_csv(pd.concat(coefficients, ignore_index=True) if coefficients else empty_weights,
-               output / f"{prefix}_outer_coefficients.csv")
+    weights = pd.concat(coefficients, ignore_index=True) if coefficients else empty_weights
+    predictions = predictions.loc[predictions["ridge"].eq(chosen)]
+    _write_csv(weights.loc[weights["ridge"].eq(chosen)], output / f"{prefix}_outer_coefficients.csv")
     _write_csv(predictions, output / f"{prefix}_outer_scores.csv")
-    return outer_rows, predictions, status
+    return chosen, selection, curve, predictions, status
+
+
+def select_ridge(mouse_errors, fixed_ridge):
+    """Balance the two control groups and prefer the largest penalty within one SE."""
+    controls = mouse_errors.loc[mouse_errors["outer_group"].isin(DROPOUT_GROUPS[1:])]
+    scores = []
+    for ridge in RIDGE_GRID if fixed_ridge is None else (fixed_ridge,):
+        groups = controls.loc[controls["ridge"].eq(ridge)].groupby("outer_group")
+        counts = groups["mse"].count().reindex(DROPOUT_GROUPS[1:], fill_value=0)
+        enough = counts.ge(2).all()
+        variance = groups["mse"].var()
+        scores.append({
+            "ridge": ridge, "n_g5": counts["g5"], "n_g6": counts["g6"],
+            "mse": groups["mse"].mean().mean() if counts.gt(0).all() else np.nan,
+            "mse_se": np.sqrt((variance / counts).sum()) / 2 if enough else np.nan,
+            "baseline_mse": groups["baseline_mse"].mean().mean() if counts.gt(0).all() else np.nan,
+        })
+    curve = pd.DataFrame(scores)
+    comparable = curve.dropna(subset=["mse_se"])
+    if fixed_ridge is not None:
+        chosen, status = fixed_ridge, "fixed_by_argument"
+    elif len(comparable) < len(RIDGE_GRID):
+        chosen, status = DEFAULT_RIDGE, "preset_penalty_insufficient_control_mice"
+    else:
+        best = comparable.loc[comparable["mse"].idxmin()]
+        chosen = comparable.loc[comparable["mse"].le(best["mse"] + best["mse_se"]), "ridge"].max()
+        status = "one_se_rule"
+    return curve.assign(selected=curve["ridge"].eq(chosen), selection=status), float(chosen), status
 
 
 def fit_weights(root, cache, top, ridge):
     import matplotlib.pyplot as plt
     from src.article_figures import ARTICLE_FONTS
     from src.eq7_calibration import (
-        CalibrationUnavailable, calibrate_weights, score_candidates, with_structural_fields,
+        CalibrationUnavailable, calibrate_weights, score_candidates, shortlist, with_structural_fields,
     )
-    from src.eq7_figures import plot_eq7_inputs, plot_eq7_regression, plot_eq7_scores
+    from src.eq7_figures import plot_eq7_inputs, plot_eq7_regression, plot_eq7_scores, plot_ridge_selection
     from src.figures import apply_article_style
     from src.spike_in import EDGER_SUCCESS
 
@@ -343,17 +421,39 @@ def fit_weights(root, cache, top, ridge):
         if not (directory / "fold_status.csv").is_file():
             raise FileNotFoundError(f"Run the evidence stage for {chain} before fitting weights.")
         prefix = chain.lower()
-        rows, outer, outer_status = fit_outer_weights(directory, output, prefix, top, ridge)
+        penalty, selection, curve, outer, outer_status = fit_outer_weights(directory, output, prefix, top, ridge)
+        rows = pd.read_csv(directory / "stratified_fold_evidence.csv", dtype={"heldout_mouse": str})
+        split_status = pd.read_csv(
+            directory / "stratified_fold_status.csv", dtype={f"omitted_{group}": str for group in DROPOUT_GROUPS},
+        )
+        fold_gates = []
+        for split, evidence in rows.groupby("evidence_split"):
+            candidates = shortlist(evidence.drop_duplicates("v_gene"))
+            fitted = not candidates.empty
+            fold_gates.append({
+                "evidence_split": split, "n_eligible": len(candidates),
+                "share_cutoff_pct": candidates["training_share_cutoff_pct"].iat[0] if fitted else np.nan,
+                "retention_cutoff_pct": candidates["training_retention_cutoff_pct"].iat[0] if fitted else np.nan,
+            })
+        gates = pd.DataFrame(fold_gates, columns=[
+            "evidence_split", "n_eligible", "share_cutoff_pct", "retention_cutoff_pct",
+        ])
+        split_status = split_status.merge(gates, on="evidence_split", how="left", validate="1:1")
         try:
-            weights, selected = calibrate_weights(rows, top, ridge)
+            weights, selected = calibrate_weights(rows, top, penalty)
         except CalibrationUnavailable as exc:
             status = str(exc)
             weights = pd.DataFrame(columns=["term", "weight", "varied_in_training", "intercept"])
             selected = rows.iloc[:0]
         else:
             status = "fitted"
-        _write_csv(weights.assign(top=top, ridge=ridge, threshold_method=THRESHOLD_METHOD),
-                   output / f"{prefix}_coefficients.csv")
+            n_fit = selected.groupby("evidence_split")["used_for_fit"].sum()
+            split_status["n_regression_rows"] = split_status["evidence_split"].map(n_fit).fillna(0).astype(int)
+        _write_csv(split_status, output / f"{prefix}_stratified_folds.csv")
+        _write_csv(weights.assign(
+            top=top, ridge=penalty, ridge_selection=selection, threshold_method=THRESHOLD_METHOD,
+            calibration_input_sha256=calibration_input_sha256(cache, chain),
+        ), output / f"{prefix}_coefficients.csv")
         _write_csv(selected, output / f"{prefix}_calibration_rows.csv")
         tables = load_snapshot_tables(cache / "structural", chain, metadata)
         ranking = with_structural_fields(pd.read_csv(baseline / f"{prefix}v_ranking.csv"), tables)
@@ -367,7 +467,10 @@ def fit_weights(root, cache, top, ridge):
         summaries.append({
             "chain": chain, "threshold_method": THRESHOLD_METHOD,
             "weight_status": status, "full_score_status": score_status,
+            "ridge": penalty, "ridge_selection": selection,
             "n_selected": len(scored), "n_with_E": int(scored["E"].notna().sum()),
+            "n_stratified_splits": len(split_status),
+            "n_stratified_splits_with_gate": int(split_status["share_cutoff_pct"].notna().sum()),
             "n_outer_folds_scored": int(outer_status["status"].eq("scored").sum()),
         })
         figure_dir = root / "figures" / FIGURE_APPROACH / "all_combined" / chain
@@ -375,6 +478,7 @@ def fit_weights(root, cache, top, ridge):
         for name, figure in (
             ("inputs", plot_eq7_inputs(selected, weights, chain, status)),
             ("regression", plot_eq7_regression(selected, outer, outer_status, chain, status)),
+            ("penalty", plot_ridge_selection(curve, chain)),
             ("selected_v_scores", plot_eq7_scores(scored, chain, score_status)),
         ):
             figure.savefig(figure_dir / f"{chain}_g1_eq7_{name}.png", dpi=300, facecolor="white")
@@ -393,9 +497,9 @@ def main():
     parser.add_argument("--clonoset-index", type=Path)
     parser.add_argument("--working-dir", type=Path)
     parser.add_argument("--top", type=int, help="Optional cap on eligible V segments per calibration fold.")
-    parser.add_argument("--ridge", type=float, default=0.1)
+    parser.add_argument("--ridge", type=float, help="Use a preset penalty instead of the mouse-level tuning grid.")
     args = parser.parse_args()
-    if (args.top is not None and args.top < 1) or not 0 < args.ridge < float("inf"):
+    if (args.top is not None and args.top < 1) or (args.ridge is not None and not 0 < args.ridge < float("inf")):
         parser.error("--top must be positive and --ridge must be finite and positive")
     root, stratum = repo_root(), "all_combined"
     cache = input_dir(root, stratum)

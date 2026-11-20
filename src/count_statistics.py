@@ -56,7 +56,9 @@ def pooled_fisher_rows(
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
 
-    rows = list(zip(feature_ids, g1_counts, control_counts, strict=True))
+    pairs = list(zip(g1_counts, control_counts, strict=True))
+    # With fixed library totals, identical pooled counts define the same 2×2 table.
+    rows = [(pair, *pair) for pair in dict.fromkeys(pairs)]
     total_g1 = float(g1_counts.sum())
     total_control = float(control_counts.sum())
     tasks = [
@@ -69,4 +71,8 @@ def pooled_fisher_rows(
         n_jobs=n_jobs,
         prefer="processes",
     )
-    return [row for batch in batches for row in batch]
+    by_pair = {row["feature_id"]: row for batch in batches for row in batch}
+    return [
+        {**by_pair[pair], "feature_id": feature_id}
+        for feature_id, pair in zip(feature_ids, pairs, strict=True)
+    ]

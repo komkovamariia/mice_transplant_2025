@@ -71,36 +71,71 @@ omission of each mouse. Both cutoffs are recomputed for each chain and
 panel. Retention is the upper quartile among segments above the median
 initial share.
 
-`evidence` uses a fixed rarefaction seed for one- and two-mouse training
-exclusions. All libraries from an omitted mouse are removed together.
-The step fits edgeR and Fisher on the raw training counts and caches
-the structural and count-based features. It can reuse the previous
-evidence cache if its inputs and evidence calculations match.
+`evidence` computes every triplet of omitted mice with one from each of
+g1, g5 and g6. There are 75 triplets with the original mouse counts.
+It also computes single and paired omissions for penalty selection.
+All libraries from each omitted mouse are removed together. The structural
+counts use a fixed, per-library rarefaction. The step fits edgeR and Fisher
+on raw training counts and caches the evidence for each split.
 
-`weights` fits nonnegative ridge for each chain. The default penalty is
-`--ridge 0.1`. An optional `--top N` limits calibration rows within each
-training fold by decreasing g1-only UMI share. All eligible combined
-V segments still receive an E score. Keep these settings fixed before
-using the outer scores for validation. If a fold lacks biological
-replicates, usable responses from all three groups or valid cutoffs,
-the reports show the reason. At three g1 mice, the double omission of
-g1 leaves too few replicates for the g1 outer model.
+`weights` evaluates nonnegative ridge penalties of 0.001, 0.01, 0.1, 1
+and 10. It uses the largest penalty within one estimated standard error
+of the minimum group-balanced g5/g6 mouse loss. If fewer than two g5 or
+g6 mice provide comparable losses, the recorded preset is 0.1. Use
+`--ridge` to supply an explicit penalty. An optional `--top N` limits
+calibration rows in each split by decreasing g1-only UMI share.
+The final fit uses all usable triplets, and all eligible combined V
+segments receive an E score. With three g1 mice, edgeR cannot fit nested
+g1 holdouts that leave only one g1 replicate.
 
 | Output | What it shows |
 |---|---|
 | `*_coefficients.csv` | The three learned slopes, their weighted standardization and the prediction intercept |
 | `*_calibration_rows.csv` | The training predictors, their standardized values and the observed and fitted signed responses |
+| `*_stratified_folds.csv` | The three omitted mice, the cutoffs and the number of usable observations per calibration split |
 | `*_scored_top_v.csv` | Every combined candidate passing both displayed cutoffs, its E and the three component contributions |
-| `*_outer_scores.csv` | Predictions and observed responses for V segments selected independently in each outer mouse fold |
-| `*_outer_status.csv` | Outer fold availability and per-mouse counts of candidate and observed segments |
+| `*_ridge_grid.csv` and `*_ridge_mouse_losses.csv` | Penalty selection, losses for each mouse and the intercept-only baseline |
+| `*_outer_scores.csv` and `*_outer_status.csv` | Internal predictions used during penalty selection and their coverage |
 | `calibration_summary.csv` | Fit and scoring status for each chain |
 
 These tables are under `results/01_v_update_inputs/all_combined/eq7_weights/`.
-The archive `figures/01_set_count_adaptive.zip` includes three new PNGs per
-chain. The input heatmap uses the actual standardized design matrix,
-the response scatter shows points used to learn the weights alongside
-outer mouse checks and the stacked score plot shows each contribution to E.
+The archive `figures/01_set_count_adaptive.zip` includes four Equation 7
+plots per chain. They show the standardized design matrix, calibration
+scatter and internal predictions, penalty curve and V scores by contribution.
 The fitted and predicted response adds an intercept to E.
+
+### Independent TRB validation
+
+Use [PRJNA954716](https://www.ebi.ac.uk/ena/browser/view/PRJNA954716)
+for the independent test. It includes three intact BALB/c mice and four
+BALB/c recipients of C57BL/6 skin grafts, profiled in splenic CD4+ T cells.
+Build [TRUST4 v1.1.7](https://github.com/liulab-dfci/TRUST4/releases/tag/v1.1.7)
+and run the two stages from the repository. The public assembly can run
+while the internal fit is in progress.
+
+```bash
+python scripts/run_eq7_external.py prepare --trust4 ~/tools/TRUST4-1.1.7/run-trust4
+python scripts/run_eq7_external.py test
+```
+
+The `prepare` stage downloads the seven paired FASTQ sets, checks their
+ENA checksums and assembles them with the supplied TRUST4 mouse IMGT
+reference. The `test` stage uses the fitted TRB coefficients and numeric
+cutoffs from the internal g1 versus g5 reference restricted to splenic CD4+
+libraries. It fits the count tests for that reference and the external group
+contrast because their samples differ from the combined baseline. The
+combined results are reused. The penalty and both cutoffs are frozen from
+the internal data before computing the external results.
+
+Under `results/eq7_external/PRJNA954716/validation/` the outputs include
+the frozen coefficients, reference cutoffs, library depth, per-mouse recovery
+errors and the comparison of both selected V lists. The union loss charges
+one unit for a V segment passing in just one cohort. For shared segments
+it reports the absolute E shift divided by the larger E, with zero when
+both scores are zero. The Jaccard index and absolute E differences are
+reported separately. The two PNGs show predicted and observed recovery by
+mouse and paired scores for the selected V segments. This study profiles
+TRB. Its skin-graft condition tests transfer across interventions.
 
 Available keys:
 

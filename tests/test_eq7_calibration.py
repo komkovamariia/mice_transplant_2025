@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from src.eq7_calibration import (
-    FEATURES, STANDARDIZED_FEATURES, calibrate_weights, score_candidates, with_structural_fields,
+    FEATURES, STANDARDIZED_FEATURES, calibrate_weights, score_candidates, select_calibration_rows, with_structural_fields,
 )
 
 
@@ -96,6 +96,9 @@ def test_held_mouse_changes_only_evaluation_outcomes_in_its_outer_fold(tmp_path,
         directory = tmp_path / name
         directory.mkdir()
         build_chain_evidence(directory, counts, counts, metadata, workers=1)
+        triples = pd.read_csv(directory / "stratified_fold_status.csv")
+        assert len(triples) == 4 * 2 * 2
+        assert triples[["omitted_g1", "omitted_g5", "omitted_g6"]].drop_duplicates().shape[0] == len(triples)
         fit_outer_weights(directory, directory, "tra", top=1, ridge=0.1)
         reports.append(tuple(
             pd.read_csv(directory / f"tra_outer_{report}.csv").query("outer_fold == 0").reset_index(drop=True)
@@ -110,3 +113,38 @@ def test_held_mouse_changes_only_evaluation_outcomes_in_its_outer_fold(tmp_path,
     pd.testing.assert_frame_equal(before_scores.drop(columns=outcomes), after_scores.drop(columns=outcomes))
     v = before_scores["v_gene"].eq("TRAV5")
     assert before_scores.loc[v, "response"].item() > after_scores.loc[v, "response"].item()
+
+
+def test_distinct_fold_cutoffs_and_equal_weight_for_repeated_mouse():
+    rows = []
+    for group in ("g1", "g5", "g6"):
+        for split, remaining in (("first", [1, 5, 17, 27]), ("second", [3, 18, 29, 3])):
+            for gene, full, retained in zip("ABCD", (10, 20, 30, 30), remaining, strict=True):
+                rows.append({
+                    "heldout_group": group, "heldout_mouse": "1", "evidence_split": split,
+                    "v_gene": gene, "n_full": full, "n_g1_exclusive_aav": retained,
+                    "only_g1_share": 0.9, "response": 0.2 if group == "g1" else -0.2,
+                })
+    selected = select_calibration_rows(pd.DataFrame(rows), None)
+    assert selected.groupby("evidence_split")["v_gene"].unique().map(list).to_dict() == {
+        "first": ["D"], "second": ["C"],
+    }
+    assert selected.groupby(["heldout_group", "evidence_split"])["regression_weight"].sum().to_list() == (
+        pytest.approx([1 / 6] * 6)
+    )
+
+
+def test_one_se_ridge_choice_excludes_target_losses():
+    from scripts.run_v_updates import select_ridge
+    from src.eq7_calibration import RIDGE_GRID
+
+    rows = []
+    for ridge, score in zip(RIDGE_GRID, (0.50, 0.30, 0.32, 0.34, 0.39), strict=True):
+        for group in ("g5", "g6"):
+            for err in (score - 0.06, score + 0.06):
+                rows.append({"ridge": ridge, "outer_group": group, "mse": err, "baseline_mse": 0.55})
+        rows.append({"ridge": ridge, "outer_group": "g1", "mse": 1.0 if ridge < 10 else 0, "baseline_mse": 0.4})
+    curve, chosen, status = select_ridge(pd.DataFrame(rows), None)
+    assert status == "one_se_rule"
+    assert chosen == 1.0
+    assert curve.loc[curve["selected"], "mse"].item() == pytest.approx(0.34)

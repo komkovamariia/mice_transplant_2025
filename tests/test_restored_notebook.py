@@ -48,13 +48,10 @@ def test_restored_notebook_retains_historical_scope_and_is_clean_source():
     assert 'globals()[f"ct_{group}_aaV_tra"]' in joined
     assert "prepare_counts(_tables_for_chain(chain, raw=True)" in joined
     assert "RAREFACTION_SEEDS" in joined
-    assert "BALANCE_SEEDS" in joined
-    assert "RAREFACTION_SEEDS = tuple(range(1201, 1301))" in joined
     assert 'REPRESENTATIVE_SEED_STRATA = {"all_combined", "cd4_combined", "cd8_combined"}' in joined
-    assert "choose_representative_rarefaction_seed" in joined
-    assert "top10_profile_distance_to_median" in joined
+    assert "representative_seed(TRA_RAREFACTIONS[1])" in joined
+    assert "write_stability(" in joined
     assert "spike_in_used_for_selection" in joined
-    assert "TRA_g1_top10_only_g1_stability.png" in joined
     assert 'profile["score_s"] = (' in joined
     assert 'profile["retention_score"] = profile["score_s"]' in joined
     assert "collect_pairwise_similarity_boxplot_table(results_v_js)" in joined
@@ -263,49 +260,14 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
 
 
 def test_rarefaction_figures_use_count_distribution_and_boxplot_summary():
-    notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
-    source = "".join(
-        next(
-            cell
-            for cell in notebook["cells"]
-            if cell["id"] == "venn-structural-robustness"
-        )["source"]
-    )
-
-    assert 'ax.bar(' in source
-    assert 'Reference top-10 V segments recovered' in source
-    assert 'ax.boxplot(' in source
-    assert '"mean | seed | IQR"' in source
-    assert '100 reruns: IQR and median' in source
-    assert 'fig.text(' not in source
-    assert 'note=' not in source
+    source = (ROOT / "src/v_stability.py").read_text()
+    assert "ax.bar(" in source
+    assert "Reference V segments recovered" in source
+    assert "ax.boxplot(" in source
 
 
 def test_structural_score_and_only_g1_share_match_article_definitions():
-    notebook = json.loads((ROOT / "venn_original.ipynb").read_text(encoding="utf-8"))
-    source = "".join(
-        next(cell for cell in notebook["cells"] if cell["id"] == "venn-inputs")["source"]
-    )
-    tree = ast.parse(source)
-    selected = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name in {
-            "_feature_v",
-            "_structural_v_summary",
-            "_ranked_structural_candidates",
-        }
-    ]
-    namespace = {
-        "np": __import__("numpy"),
-        "pd": pd,
-        "ast": ast,
-    }
-    exec(
-        compile(ast.Module(body=selected, type_ignores=[]), "structural_summary", "exec"),
-        namespace,
-    )
+    from src.structural_v import structural_summary, v_region_proportions
 
     features = pd.Index(
         [
@@ -331,13 +293,11 @@ def test_structural_score_and_only_g1_share_match_article_definitions():
         "g6": empty,
     }
 
-    summary = namespace["_structural_v_summary"](tables).set_index("v")
+    summary = structural_summary(tables).set_index("v")
     assert summary.loc["TRAV1", "score_s"] == pytest.approx(2 / 5)
     assert summary.loc["TRAV1", "retention"] == pytest.approx(2 / 3)
-    assert summary.loc["TRAV1", "only_g1_share"] == pytest.approx(2 / 3)
+    assert v_region_proportions(tables).loc["TRAV1", "100"] == pytest.approx(2 / 3)
     assert summary.loc["TRAV2", "score_s"] == pytest.approx(2 / 5)
-    ranked = namespace["_ranked_structural_candidates"](summary.reset_index())
-    assert ranked["v"].tolist()[:2] == ["TRAV1", "TRAV2"]
 
 
 def test_figure_chain_detection_ignores_repository_name_and_routes_trb():
@@ -436,8 +396,11 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
         panels = [panel for panel in ARTICLE_FIGURES if panel != "spike_in"]
         for name in (
             "representative_downsampling_seed.json", "tra_rarefaction_seed_summary.csv",
-            "tra_rarefaction_v_profiles.csv", "tra_top10_only_g1_by_seed.csv",
-            "tra_top10_only_g1_summary.csv", "trbv_ranking.csv", "distinctive_trbv.csv",
+            *(f"{chain}_{name}.csv" for chain in ("tra", "trb")
+              for name in ("rarefaction_v_profiles", "rarefaction_adaptive_stability",
+                           "balanced_mouse_adaptive_stability", "adaptive_only_g1_by_seed",
+                           "adaptive_only_g1_summary")),
+            "trbv_ranking.csv", "distinctive_trbv.csv",
             "tra_depth_check.csv", "trb_depth_check.csv", "tra_mds_coordinates.csv", "trb_mds_coordinates.csv",
         ):
             (result_dir / name).write_text("test\n", encoding="utf-8")
@@ -446,10 +409,8 @@ def test_output_verification_accepts_a_complete_single_stratum(tmp_path, monkeyp
         if stratum == "all_combined":
             extra = figure_dir / chain / "surplus"
             names += [extra / f"{chain}_g1_{stem}.png" for stem in (
-                "rarefaction_stability", "balanced_mouse_stability",
+                "rarefaction_stability", "balanced_mouse_stability", "adaptive_only_g1_stability",
             )]
-            if chain == "TRA":
-                names.append(extra / "TRA_g1_top10_only_g1_stability.png")
         for png in names:
             png.parent.mkdir(parents=True, exist_ok=True)
             png.write_bytes(b"png")

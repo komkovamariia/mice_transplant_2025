@@ -375,9 +375,11 @@ def verify_first_approach_outputs(
                 [
                     result_dir / "representative_downsampling_seed.json",
                     result_dir / "tra_rarefaction_seed_summary.csv",
-                    result_dir / "tra_rarefaction_v_profiles.csv",
-                    result_dir / "tra_top10_only_g1_by_seed.csv",
-                    result_dir / "tra_top10_only_g1_summary.csv",
+                    *(result_dir / f"{chain}_{name}.csv"
+                      for chain in ("tra", "trb")
+                      for name in ("rarefaction_v_profiles", "rarefaction_adaptive_stability",
+                                   "balanced_mouse_adaptive_stability", "adaptive_only_g1_by_seed",
+                                   "adaptive_only_g1_summary")),
                 ]
             )
         if spike_run is None and stratum == "all_combined":
@@ -450,7 +452,8 @@ def verify_first_approach_outputs(
                 "TRB_g1_rarefaction_stability.png",
                 "TRA_g1_balanced_mouse_stability.png",
                 "TRB_g1_balanced_mouse_stability.png",
-                "TRA_g1_top10_only_g1_stability.png",
+                "TRA_g1_adaptive_only_g1_stability.png",
+                "TRB_g1_adaptive_only_g1_stability.png",
             }
             missing_stability = required_stability - figure_names
             if missing_stability:

@@ -14,9 +14,10 @@ Count-based inference uses the original functional integer UMI counts. In pooled
 
 For `all_combined`, `cd4_combined` and `cd8_combined`, structural rarefaction is repeated for 100 baseline seeds.
 
-For each rerun, V segments are ranked by the preservation score `S(v)` defined below. A consensus top-10 TRAV list is built from how often a segment appears in the rerun top 10, with median `S(v)` used for tie-breaking. Each rerun is then represented by the g1-only regional-share values of those consensus TRAV segments.
-
-The representative seed is the rerun with the smallest mean absolute distance from the across-rerun median profile. Ties are resolved by larger consensus top-10 overlap and then by lower seed. Only baseline data are used for this selection.
+Each draw uses its own adaptive cutoffs and retains every passing TRAV segment.
+The representative draw minimizes the mean Jaccard distance between its
+shortlist and the other valid draws. The smaller seed breaks exact ties.
+The same seed is used for TRB figures. Only baseline data enter this selection.
 
 ## V-segment preservation
 
@@ -203,11 +204,17 @@ for commands and outputs.
 
 The representative-seed strata include two structural checks.
 
-The 100 rarefaction reruns report how many reference top-10 V segments are recovered in each rerun. TRA also has a boxplot of the g1-only regional share for each consensus top-10 TRAV segment across the 100 runs. The box shows the interquartile range and median; the mean and representative-seed value are overlaid.
+All V segments passing both adaptive cutoffs in the displayed profile define
+the reference for that chain. Each of 100 library rarefaction reruns refits
+both cutoffs. We report shortlist sizes, intersection counts, reference
+recovery and Jaccard similarity. The per-V boxplots report the UMI share in
+the g1-only overlap region relative to g5 and g6 for every reference segment
+and distinguish a missing V segment from a measured zero share.
 
-A second analysis repeats structural subtraction after balancing the number of mice contributed by g1, g2, g4, g5 and g6 to the smallest group size. This is repeated for 50 seeds. It checks whether unequal mouse counts are driving the structural shortlist.
-
-Neither stability analysis uses spike-in data.
+A second analysis balances g1, g2, g4, g5 and g6 to the smallest group size.
+It retains all eligible libraries of each sampled mouse and refits both
+cutoffs in each of 50 draws. The CSVs identify unavailable fits and
+comparisons. The perturbations in both checks use baseline data.
 
 ## Validation
 

@@ -155,6 +155,36 @@ def update_threshold_figures(root, stratum):
     print(f"Figure archive written to {archive_first_approach_figures(output_name=FIGURE_APPROACH)}")
 
 
+def update_stability(root, stratum):
+    import matplotlib.pyplot as plt
+    from src.article_figures import ARTICLE_FONTS
+    from src.figures import apply_article_style
+    from src.v_stability import write_stability
+
+    cache = input_dir(root, stratum)
+    metadata = _metadata(cache)
+    seeds = json.loads((cache / "v_input_seeds.json").read_text())
+    results = root / "results" / FIGURE_APPROACH / stratum
+    results.mkdir(parents=True, exist_ok=True)
+    apply_article_style()
+    plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ARTICLE_FONTS})
+    for chain in CHAINS:
+        figures = root / "figures" / FIGURE_APPROACH / stratum / chain / "surplus"
+        figures.mkdir(parents=True, exist_ok=True)
+
+        def save(figure, filename):
+            figure.savefig(figures / filename, dpi=300, facecolor="white")
+            plt.close(figure)
+
+        write_stability(
+            load_snapshot_tables(cache / "raw", chain, metadata),
+            load_snapshot_tables(cache / "structural", chain, metadata),
+            metadata, seeds["depth"], seeds["structural_seed"], chain, results, save,
+        )
+    print(f"Stability results written to {results}")
+    print(f"Figure archive written to {archive_first_approach_figures(output_name=FIGURE_APPROACH)}")
+
+
 def calibration_dir(root, cache, chain):
     digest = hashlib.sha256()
     digest.update((cache / "raw" / "count_snapshots" / f"{chain}_manifest.json").read_bytes())
@@ -490,7 +520,7 @@ def fit_weights(root, cache, top, ridge):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("all", "prepare", "thresholds", "evidence", "weights"))
+    parser.add_argument("stage", choices=("all", "prepare", "thresholds", "stability", "evidence", "weights"))
     parser.add_argument("--baseline-results", type=Path, help="Previous all_combined results directory.")
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--metadata-csv", type=Path)
@@ -511,6 +541,9 @@ def main():
         if args.stage == "all":
             build_weight_evidence(root, cache)
             fit_weights(root, cache, args.top, args.ridge)
+    elif args.stage == "stability":
+        prepare_if_missing(root, stratum, args.baseline_results, _base_environment(args))
+        update_stability(root, stratum)
     elif args.stage == "evidence":
         build_weight_evidence(root, cache)
     else:

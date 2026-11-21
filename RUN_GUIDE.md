@@ -56,6 +56,7 @@ separately:
 
 ```bash
 python scripts/run_v_updates.py thresholds
+python scripts/run_v_updates.py stability
 python scripts/run_v_updates.py evidence
 python scripts/run_v_updates.py weights
 ```
@@ -70,6 +71,14 @@ full-profile thresholds and the sensitivity of those thresholds to the
 omission of each mouse. Both cutoffs are recomputed for each chain and
 panel. Retention is the upper quartile among segments above the median
 initial share.
+
+`stability` uses the cached rarefied tables for the displayed shortlist and
+the cached raw tables for the 100 library draws. It refits both adaptive
+cutoffs on each draw and in 50 balanced-mouse draws, with no top-N cap.
+It writes the CSVs under `results/01_set_count_adaptive/all_combined/` and
+the PNGs under each chain’s `surplus` directory. It does not fit edgeR or
+Equation 7. An existing baseline keeps its displayed seed in this stage.
+A new full standard run chooses a seed using the adaptive TRAV shortlists.
 
 `evidence` computes every triplet of omitted mice with one from each of
 g1, g5 and g6. There are 75 triplets with the original mouse counts.
@@ -228,12 +237,11 @@ The representative-seed strata also write:
 representative_downsampling_seed.json
 tra_rarefaction_seed_summary.csv
 tra_rarefaction_v_profiles.csv
-tra_top10_only_g1_by_seed.csv
-tra_top10_only_g1_summary.csv
-tra_rarefaction_top10_stability.csv
-trb_rarefaction_top10_stability.csv
-tra_balanced_mouse_top10_stability.csv
-trb_balanced_mouse_top10_stability.csv
+trb_rarefaction_v_profiles.csv
+{tra,trb}_adaptive_only_g1_by_seed.csv
+{tra,trb}_adaptive_only_g1_summary.csv
+{tra,trb}_rarefaction_adaptive_stability.csv
+{tra,trb}_balanced_mouse_adaptive_stability.csv
 ```
 
 `run_summary.json` should contain:
@@ -253,7 +261,7 @@ TRB_g1_v_segment_retention.png
 TRB_g1_v_segment_localization.png
 ```
 
-For the representative-seed strata, the stability outputs also include `TRA_g1_rarefaction_stability.png`, `TRB_g1_rarefaction_stability.png`, `TRA_g1_balanced_mouse_stability.png`, `TRB_g1_balanced_mouse_stability.png` and `TRA_g1_top10_only_g1_stability.png`.
+For the representative-seed strata, the stability outputs also include `TRA_g1_rarefaction_stability.png`, `TRB_g1_rarefaction_stability.png`, `TRA_g1_balanced_mouse_stability.png`, `TRB_g1_balanced_mouse_stability.png` and `{TRA,TRB}_g1_adaptive_only_g1_stability.png`.
 
 A complete nine-stratum run writes `results/01_set_count/all_strata_distinctive_trav_summary.csv` and refreshes `figures/01_set_count.zip`.
 

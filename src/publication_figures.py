@@ -4,7 +4,7 @@ import re
 
 from matplotlib import patheffects, rc_context
 from matplotlib.colors import to_rgb
-from matplotlib.font_manager import fontManager
+from matplotlib.font_manager import FontProperties, findfont, fontManager
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
@@ -54,6 +54,9 @@ def save_publication_figure(figure, png):
     width, height = figure.get_size_inches()
     box = Bbox.union([Bbox.from_bounds(0, 0, width, height), bounds])
     png.parent.mkdir(parents=True, exist_ok=True)
-    with rc_context({"pdf.fonttype": 42}):
+    # Type 42 needs TrueType outlines. The installed Palatino substitute is CFF.
+    font_path = findfont(FontProperties(family=family))
+    pdf_fonttype = 3 if font_path.lower().endswith(".otf") else 42
+    with rc_context({"pdf.fonttype": pdf_fonttype}):
         figure.savefig(png, dpi=450, bbox_inches=box, facecolor="white")
         figure.savefig(png.with_suffix(".pdf"), dpi=450, bbox_inches=box, facecolor="white")

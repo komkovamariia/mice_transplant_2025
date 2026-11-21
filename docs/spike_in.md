@@ -4,6 +4,11 @@ The spike-in experiment measures how an added TRA or TRB family moves through th
 
 ## Baseline and target family
 
+The perturbation runner reproduces its original fixed-protocol baseline.
+Its target-family eligibility and dose-response figures use the historical
+settings for that benchmark. The standard adaptive V shortlist, calibrated
+score and external validation are calculated in separate runs.
+
 The runner first executes the unmodified combined baseline. TRA and TRB group matrices are saved with checksums and sample metadata.
 
 A target V segment must be outside the original baseline candidate set for the spike-in protocol defined by:

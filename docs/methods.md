@@ -91,7 +91,7 @@ Benjamini-Hochberg correction is applied across the tested aaV clonotypes.
 
 edgeR uses mouse-level analysis units with group levels `allogeneic` and `g1`. Positive logFC indicates higher abundance in g1. Negative logFC indicates higher abundance in the pooled g5+g6 reference. The model sequence is `DGEList`, `calcNormFactors`, `filterByExpr`, `estimateDisp`, `glmQLFit` and `glmQLFTest`. At least two analysis units are required in each contrast group. The figure shows up to eight V segments per direction of the mean significant-aaV effect. The support panel counts significant aaV in both directions.
 
-The baseline V-ranking tables report the historic Equation 7 score:
+The compatibility columns `evidence_score` and `stratum_rank` in the baseline V-ranking tables retain the original descriptive ranking:
 
 ```text
 4 * edgeR_g1_enriched
@@ -100,6 +100,9 @@ The baseline V-ranking tables report the historic Equation 7 score:
 ```
 
 Ties use significant-aaV counts, exclusive-aaV counts and V name.
+The calibrated analysis uses the edgeR and Fisher indicators from these tables.
+It derives the structural count and cutoffs from the current rarefied tables.
+It writes the learned rank by `E` to `{tra,trb}_scored_top_v.csv`.
 
 ### Calibrated Equation 7 in the combined stratum
 

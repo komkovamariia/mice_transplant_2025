@@ -237,15 +237,19 @@ def test_article_score_and_entropy_use_retention_and_four_g1_regions():
             "region_entropy": [0.5, 0.4, 0.3, 0.2],
         }
     )
-    displayed, labeled = bubble_candidates(candidates, limit=2)
+    thresholds = PlotThresholds(0.6, 70.0)
+    displayed, labeled = bubble_candidates(candidates, limit=2, thresholds=thresholds)
     assert len(displayed) == 4
     expected = ["TRAV-top", "TRAV-middle"]
     assert labeled["v"].tolist() == expected
 
     for chain in ("TRA", "TRB"):
-        dumbbell = plot_dumbbell(candidates, chain)
-        heatmap = plot_localization(candidates, candidates["v"].tolist(), chain)
-        subsets = plot_subsets({"CD8+": candidates, "CD4+": candidates}, chain)
+        dumbbell = plot_dumbbell(candidates, chain, thresholds=thresholds)
+        heatmap = plot_localization(candidates, candidates["v"].tolist(), chain, thresholds=thresholds)
+        subsets = plot_subsets(
+            {"CD8+": candidates, "CD4+": candidates}, chain,
+            thresholds_by_subset={"CD8+": thresholds, "CD4+": thresholds},
+        )
         try:
             assert [tick.get_text() for tick in dumbbell.axes[0].get_yticklabels()] == expected
             assert {tick.get_text() for tick in heatmap.axes[0].get_yticklabels()} == set(expected)

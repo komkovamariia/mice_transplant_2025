@@ -82,7 +82,13 @@ A new full standard run chooses a seed using the adaptive TRAV shortlists.
 
 `evidence` computes every triplet of omitted mice with one from each of
 g1, g5 and g6. There are 75 triplets with the original mouse counts.
-It also computes single and paired omissions for penalty selection.
+It also computes single omissions for internal holdout features and paired
+omissions for the inner training data used during penalty selection. These
+are separate split families. In a paired split, one omitted mouse is the
+outer holdout and the other supplies an inner recovery response. Pairs
+with two g1 omissions can be recorded as unavailable because one g1 mouse
+remains and edgeR requires two per contrast arm. They supply no calibration
+rows. The triplet calibration retains two g1 mice.
 All libraries from each omitted mouse are removed together. The structural
 counts use a fixed, per-library rarefaction. The step fits edgeR and Fisher
 on raw training counts and caches the evidence for each split.

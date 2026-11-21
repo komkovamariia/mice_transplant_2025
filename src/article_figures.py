@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MaxNLocator
 
-from .v_thresholds import FIXED_THRESHOLDS
 from .figures import CORAL, MAGENTA, PURPLE, THRESHOLD_BLUE
 
 
@@ -100,13 +99,13 @@ def _title(ax, title, size=13, pad=5):
     ax.set_title(title, fontsize=size, fontweight="normal", pad=pad)
 
 
-def eligible_segments(profile, thresholds=FIXED_THRESHOLDS):
+def eligible_segments(profile, thresholds):
     if thresholds is None:
         return profile.iloc[:0]
     return profile.loc[thresholds.includes(profile[SHARE_COLUMN], profile[RETENTION_COLUMN])]
 
 
-def plot_dumbbell(profile, chain, suffix="", *, thresholds=FIXED_THRESHOLDS):
+def plot_dumbbell(profile, chain, suffix="", *, thresholds):
     rows = eligible_segments(profile, thresholds).sort_values(
         SCORE_COLUMNS, ascending=[False, False, False, True],
     ).head(20)
@@ -134,7 +133,7 @@ def plot_dumbbell(profile, chain, suffix="", *, thresholds=FIXED_THRESHOLDS):
     return fig
 
 
-def bubble_candidates(profile, limit, thresholds=FIXED_THRESHOLDS):
+def bubble_candidates(profile, limit, thresholds):
     plotted = profile.dropna(subset=SCORE_COLUMNS + [COUNT_COLUMN, "region_entropy"])
     plotted = plotted.loc[plotted[COUNT_COLUMN].gt(0) & plotted[SHARE_COLUMN].gt(0)]
     eligible = eligible_segments(plotted, thresholds)
@@ -142,7 +141,7 @@ def bubble_candidates(profile, limit, thresholds=FIXED_THRESHOLDS):
     return plotted, selected
 
 
-def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thresholds=FIXED_THRESHOLDS):
+def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thresholds):
     from adjustText import adjust_text
 
     rows, selected = bubble_candidates(profile, 10 if compact else 11, thresholds)
@@ -221,7 +220,7 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
     return selected["v"].tolist()
 
 
-def plot_retention(profile, chain, stratum_title, *, thresholds=FIXED_THRESHOLDS):
+def plot_retention(profile, chain, stratum_title, *, thresholds):
     fig = article_canvas("retention")
     ax = fig.add_axes((0.074, 0.110, 0.757, 0.844))
     color_axis = fig.add_axes((0.883, 0.110, 0.032, 0.844))
@@ -232,7 +231,7 @@ def plot_retention(profile, chain, stratum_title, *, thresholds=FIXED_THRESHOLDS
     return fig, genes
 
 
-def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, compact=False, thresholds=FIXED_THRESHOLDS):
+def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, compact=False, thresholds):
     size = 7 if compact else 10
     _ticks(ax, size)
     for spine in ax.spines.values():
@@ -281,7 +280,7 @@ def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, co
         )
 
 
-def plot_localization(profile, genes, chain, suffix="", *, thresholds=FIXED_THRESHOLDS):
+def plot_localization(profile, genes, chain, suffix="", *, thresholds):
     fig = article_canvas("localization")
     ax = fig.add_axes((0.156, 0.148, 0.738, 0.794))
     color_axis = fig.add_axes((0.916, 0.148, 0.027, 0.794))
@@ -290,7 +289,7 @@ def plot_localization(profile, genes, chain, suffix="", *, thresholds=FIXED_THRE
     return fig
 
 
-def plot_subsets(profiles, chain, *, thresholds_by_subset=None):
+def plot_subsets(profiles, chain, *, thresholds_by_subset):
     fig = article_canvas("cd4_cd8")
     fig.suptitle(f"{chain} g1: separate CD8+ and CD4+ structural analyses",
                  fontsize=15, fontweight="bold", y=0.987)
@@ -301,7 +300,7 @@ def plot_subsets(profiles, chain, *, thresholds_by_subset=None):
         heatmap = fig.add_axes((0.605, bottom, 0.319, 0.354))
         heatmap_color = fig.add_axes((0.939, bottom, 0.016, 0.354))
         profile = profiles[subset]
-        thresholds = FIXED_THRESHOLDS if thresholds_by_subset is None else thresholds_by_subset[subset]
+        thresholds = thresholds_by_subset[subset]
         genes = _retention_panel(fig, bubble, bubble_color, profile,
                                  f"{subset} V-segment retention", compact=True, thresholds=thresholds)
         _localization_panel(fig, heatmap, heatmap_color, profile, genes, chain,

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MaxNLocator
 
-from .figures import CORAL, MAGENTA, PURPLE, THRESHOLD_BLUE
+from .figures import CORAL, MAGENTA, PURPLE
 
 
 # Canvas sizes follow the manuscript's PNG exports.
@@ -75,7 +75,7 @@ def empty_axis(ax, message):
 
 
 def panel_letter(ax, label, x=-0.10, y=1.10, fontsize=13):
-    ax.text(x, y, label, fontsize=fontsize, fontweight="bold", transform=ax.transAxes)
+    ax.text(x, y, f"({label.lower()})", fontsize=fontsize, transform=ax.transAxes)
 
 
 def _ticks(ax, size, *, box=False):
@@ -83,7 +83,7 @@ def _ticks(ax, size, *, box=False):
     for spine in ax.spines.values():
         spine.set_visible(box)
         spine.set_linewidth(0.65)
-        spine.set_color("#333333")
+        spine.set_color("black")
     if not box:
         for side in ("left", "bottom"):
             ax.spines[side].set_visible(True)
@@ -91,7 +91,7 @@ def _ticks(ax, size, *, box=False):
 
 
 def _grid(ax, axis):
-    ax.grid(axis=axis, color="#e6e6e6", linewidth=0.6, alpha=0.38)
+    ax.grid(axis=axis, color="#eadbed", linewidth=0.6, alpha=0.38)
     ax.set_axisbelow(True)
 
 
@@ -157,8 +157,8 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
     )
     ax.set_ylabel("Retention after subtraction (%)", fontsize=size, labelpad=3)
     if thresholds is not None:
-        ax.axvline(thresholds.initial_share_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
-        ax.axhline(thresholds.retention_pct, color=THRESHOLD_BLUE, linestyle=":", linewidth=0.70, alpha=0.87)
+        ax.axvline(thresholds.initial_share_pct, color=PURPLE, linestyle=":", linewidth=0.70, alpha=0.87)
+        ax.axhline(thresholds.retention_pct, color=PURPLE, linestyle=":", linewidth=0.70, alpha=0.87)
         ax.text(
             0.98, 0.035,
             f"Share ≥ {thresholds.initial_share_pct:.3g}% · Retention ≥ {thresholds.retention_pct:.4g}%",
@@ -212,7 +212,7 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
             ax.annotate(
                 "", xy=(getattr(row, SHARE_COLUMN), getattr(row, RETENTION_COLUMN)),
                 xytext=label.get_position(), zorder=2.5,
-                arrowprops={"arrowstyle": "-", "color": "#333333", "lw": 0.65,
+                arrowprops={"arrowstyle": "-", "color": "black", "lw": 0.65,
                             "patchA": label, "shrinkA": 0.8, "shrinkB": diameter / 2},
             )
     return selected["v"].tolist()
@@ -345,7 +345,7 @@ def plot_edger(ranking, chain, suffix=""):
             if column == effect:
                 from matplotlib.patches import Patch
 
-                ax.axvline(0, color="#555555", linewidth=0.7)
+                ax.axvline(0, color="black", linewidth=0.7)
                 ax.legend(
                     handles=[Patch(color=PURPLE, label="Higher in g5+g6 (−)"),
                              Patch(color=CORAL, label="Higher in g1 (+)")],
@@ -411,7 +411,7 @@ def plot_spike_in(frame, chain):
         ("v_umi_share_g1", f"{gene} UMI share", "UMI share in g1 (%)"),
         ("v_final_rank", "Integrated V-segment rank", "Integrated rank"),
     )
-    arrow = {"arrowstyle": "-", "color": "#222222", "lw": 0.85}
+    arrow = {"arrowstyle": "-", "color": "black", "lw": 0.85}
     for i, (column, title, ylabel) in enumerate(panels):
         ax = fig.add_axes((0.053 + 0.502 * (i % 2), 0.596 - 0.449 * (i // 2), 0.438, 0.344))
         _ticks(ax, 14)
@@ -480,7 +480,7 @@ def plot_group_overlap(tables, chain):
         ("g2", 2.12, 0.8, "#ffac7c", 3.10, 1.52),
         ("g4", 2.12, -0.8, "#865fa0", 3.10, -1.58),
     ):
-        ax.add_patch(Circle((x, y), 1.435, facecolor=color, edgecolor="#a19b99", alpha=0.42, lw=0.7))
+        ax.add_patch(Circle((x, y), 1.435, facecolor=color, edgecolor="black", alpha=0.42, lw=0.7))
         ax.text(lx, ly, f"{group}\n{len(sets[group]):,}", ha="center", va="center", zorder=5)
 
     def count(x, y, keys):

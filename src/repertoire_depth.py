@@ -126,7 +126,7 @@ def plot_depth_check(frame, chain, target_depth):
             ax.scatter(target, value, s=26, color=PURPLE, zorder=4)
             ax.annotate(f"{target_depth:,} UMI", (target, value), xytext=(25, -29 if i == 0 else 23),
                         textcoords="offset points", ha="left", fontsize=7,
-                        arrowprops={"arrowstyle": "-", "color": "#707070", "lw": 0.6})
+                        arrowprops={"arrowstyle": "-", "color": "black", "lw": 0.6})
     return fig
 
 
@@ -179,7 +179,7 @@ def plot_mds(points, chain, target_depth):
         right.tick_params(axis="y", left=False, labelleft=False)
         for axis, side in ((ax, 1), (right, 0)):
             axis.plot([side, side], [0, 1], linestyle="none", marker=[(-1, -0.6), (1, 0.6)],
-                      markersize=9, markeredgewidth=0.85, color="#333333",
+                      markersize=9, markeredgewidth=0.85, color="black",
                       transform=axis.transAxes, clip_on=False)
         fig.text(0.45, 0.022, "Broken X axis; horizontal distances across the gap are not to scale.",
                  ha="center", fontsize=9)
@@ -211,14 +211,14 @@ def plot_mds(points, chain, target_depth):
                              linewidth=0, alpha=0.9)
                 for px, py, mouse in visible[["MDS1", "MDS2", "mouse_id"]].itertuples(index=False, name=None):
                     label = f"{str(mouse).rsplit('_', 1)[-1]}|{tissue[0]}"
-                    labels[axis].append(axis.text(px, py, label, fontsize=7.5, color="#333333",
+                    labels[axis].append(axis.text(px, py, label, fontsize=7.5, color="black",
                                                   ha="left", va="bottom"))
     ax.margins(y=0.09)
     for axis, texts in labels.items():
         if texts:
             adjust_text(texts, ax=axis, force_text=(0.42, 0.55), force_pull=(0.10, 0.12),
                         expand=(1.05, 1.2), iter_lim=150, min_arrow_len=5,
-                        arrowprops={"arrowstyle": "-", "color": "#777777", "lw": 0.45})
+                        arrowprops={"arrowstyle": "-", "color": "black", "lw": 0.45})
     fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.830, 0.885),
                fontsize=7.5, frameon=True, borderpad=0.4, handletextpad=0.45)
     return fig

@@ -88,15 +88,15 @@ def plot_eq7_regression(rows, outer, outer_status, chain, status):
             ax.xaxis.set_major_locator(MaxNLocator(5))
             ax.ticklabel_format(axis="x", useOffset=False)
             if lower == upper:
-                ax.axhline(intercept + lower, lw=1.1, color="#454545", zorder=1,
+                ax.axhline(intercept + lower, lw=1.1, color="black", zorder=1,
                            label="One fitted value")
             else:
-                ax.plot([lower, upper], [intercept + lower, intercept + upper], lw=1.1, color="#454545",
+                ax.plot([lower, upper], [intercept + lower, intercept + upper], lw=1.1, color="black",
                         zorder=1, label="Fitted line: intercept + E")
             ax.legend(loc="lower right", frameon=False, fontsize=7.6)
         else:
             ax.set_xlim(-limit, limit)
-            ax.plot([-limit, limit], [-limit, limit], "--", lw=0.8, color="#999999", zorder=1,
+            ax.plot([-limit, limit], [-limit, limit], "--", lw=0.8, color="black", zorder=1,
                     label="Equal observed and predicted")
             ax.legend(loc="lower right", frameon=False, fontsize=7.6)
         for group, (marker, color) in GROUP_MARKERS.items():
@@ -190,12 +190,12 @@ def plot_external_predictions(predictions, losses, summary):
             continue
         _ticks(ax, 8.5)
         _grid(ax, "both")
-        ax.plot([-extent, extent], [-extent, extent], "--", lw=0.8, color="#858585", zorder=1)
+        ax.plot([-extent, extent], [-extent, extent], "--", lw=0.8, color="black", zorder=1)
         mice = subset.groupby("heldout_mouse")
         colors = plt.get_cmap("magma")(np.linspace(0.22, 0.78, mice.ngroups))
         for (mouse, frame), color in zip(mice, colors, strict=True):
             ax.scatter(frame["predicted_response"], frame["response"], label=mouse, c=[color],
-                       alpha=0.82, s=36, linewidths=0.4, edgecolors="#303030", zorder=2)
+                       alpha=0.82, s=36, linewidths=0.4, edgecolors="black", zorder=2)
         group_losses = losses.loc[losses["heldout_group"].eq(group)]
         ax.text(0.03, 0.97, f"{mice.ngroups}/{len(group_losses)} mice · MAE {group_losses['mae'].mean():.3f}",
                 transform=ax.transAxes, ha="left", va="top", fontsize=8)
@@ -231,7 +231,7 @@ def plot_external_comparison(compared, summary):
     ):
         exists = compared[column].notna()
         ax.scatter(compared.loc[exists, column], y[exists], c=[color], marker=marker, label=label,
-                   s=35, linewidths=0.45, edgecolors="#303030", zorder=2, clip_on=False)
+                   s=35, linewidths=0.45, edgecolors="black", zorder=2, clip_on=False)
     cutoff_note = f"{summary['n_common']}/{len(compared)} shared · union loss {summary['mean_union_loss']:.3f}"
     ax.set(xlabel=f"Equation 7 score with frozen coefficients\n{cutoff_note}", yticks=y, yticklabels=compared["v_gene"])
     ax.invert_yaxis()

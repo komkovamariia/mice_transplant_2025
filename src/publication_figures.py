@@ -1,6 +1,9 @@
 """Render figures at the physical width used in the IJMS manuscript."""
 
-from matplotlib import rc_context
+import re
+
+from matplotlib import patheffects, rc_context
+from matplotlib.colors import to_rgb
 from matplotlib.font_manager import fontManager
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
@@ -8,6 +11,7 @@ from matplotlib.transforms import Bbox
 
 MDPI_WIDTH_IN = 180 / 25.4
 MDPI_FONTS = ["TeX Gyre Pagella", "P052", "STIXGeneral", "DejaVu Serif"]
+PANEL_LABEL = re.compile(r"^([A-D])\.\s+")
 
 
 def save_publication_figure(figure, png):
@@ -28,8 +32,16 @@ def save_publication_figure(figure, png):
         for spine in ax.spines.values():
             if spine.get_visible():
                 spine.set_linewidth(0.65)
+                spine.set_edgecolor("black")
     for item in figure.findobj(Text):
-        item.set_text(item.get_text().replace("log₂", r"log$_2$"))
+        label = item.get_text().replace("log₂", r"log$_2$")
+        label = PANEL_LABEL.sub(lambda match: f"({match[1].lower()})  ", label)
+        item.set_text("\n".join(line.removesuffix(".") for line in label.split("\n")))
+        if to_rgb(item.get_color()) == (1.0, 1.0, 1.0):
+            # Heatmap values need a light boundary on the darkest cells.
+            item.set_path_effects([patheffects.withStroke(linewidth=1.5, foreground="white")])
+        item.set_color("black")
+        item.set_math_fontfamily("stix")
         item.set_fontfamily(family)
         item.set_fontweight("normal")
         item.set_fontsize(sizes.get(item, 8.25))

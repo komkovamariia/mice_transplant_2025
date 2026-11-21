@@ -149,7 +149,7 @@ def plot_regional_stability(matrix, summary, seed, chain):
                    flierprops={"markersize": 2})
         mean = ax.scatter(summary.reindex(genes)["mean"], positions, s=22, color=CORAL, marker="D",
                           label="Mean", zorder=3)
-        handles = [Patch(facecolor="#f5cdbe", edgecolor="#444444", label="IQR and median"), mean]
+        handles = [Patch(facecolor="#f5cdbe", edgecolor="black", label="IQR and median"), mean]
         chosen = summary.reindex(genes)["representative_seed_share_pct"]
         if chosen.notna().any():
             point = ax.scatter(chosen, positions, s=29, facecolors="none", edgecolors=PURPLE,
@@ -164,7 +164,7 @@ def plot_regional_stability(matrix, summary, seed, chain):
         ax.text(0.5, 0.5, "No V segments passed both cutoffs", ha="center", transform=ax.transAxes)
         ax.set_title(f"{chain} g1: V-segment overlap across rarefaction draws")
     ax.set(xlabel="g1-only share of V-segment UMI (%)", ylabel="V segment")
-    ax.grid(axis="x", color="#e9e9e9", linewidth=0.55)
+    ax.grid(axis="x", color="#eadbed", linewidth=0.55)
     ax.set_axisbelow(True)
     return fig
 

@@ -390,3 +390,11 @@ python scripts/validate_repository.py
 python -m compileall -q src scripts
 python -m pytest -q
 ```
+
+### Repertoire QC and depth figures
+
+The exploratory `presenting_repseq.ipynb` includes clonoset summaries and the
+early F2/MDS depth checks. The paper's depth checks use
+[`src/repertoire_depth.py`](src/repertoire_depth.py) from the standard analysis.
+The redraw stage reads the saved depth and MDS tables. Library summaries and
+exploratory CDR3 and diversity analyses do not need to run to redraw the paper.

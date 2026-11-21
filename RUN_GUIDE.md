@@ -157,8 +157,8 @@ The sample manifest selects three BALB/c spleens on day 9 after C57BL/6
 marrow transplantation and pins both FASTQ checksums for each run.
 
 ```bash
-python scripts/run_eq7_external.py prepare --trust4 ~/tools/TRUST4-1.1.7/run-trust4
-python scripts/run_eq7_external.py test
+python scripts/run_eq7_external.py run --study PRJNA650133 --trust4 ~/tools/TRUST4-1.1.7/run-trust4 \
+  --expect-run 1249 1031 15000
 ```
 
 The test uses the frozen TRA and TRB weights with internal splenic CD4+
@@ -179,8 +179,8 @@ includes three intact BALB/c mice and four
 BALB/c recipients of C57BL/6 skin grafts, profiled in splenic CD4+ T cells.
 
 ```bash
-python scripts/run_eq7_external.py prepare --study PRJNA954716 --trust4 ~/tools/TRUST4-1.1.7/run-trust4
-python scripts/run_eq7_external.py test --study PRJNA954716
+python scripts/run_eq7_external.py run --study PRJNA954716 --trust4 ~/tools/TRUST4-1.1.7/run-trust4 \
+  --expect-run 1249 1031 15000
 ```
 
 The `prepare` stage downloads the seven paired FASTQ sets, checks their
@@ -198,8 +198,8 @@ errors and the comparison of both selected V lists. The union loss charges
 one unit for a V segment passing in just one cohort. For shared segments
 it reports the absolute E shift divided by the larger E, with zero when
 both scores are zero. The Jaccard index and absolute E differences are
-reported separately. The two PNGs show predicted and observed recovery by
-mouse and paired scores for the selected V segments. This study profiles
+reported separately. The two PNGs show candidate coverage and absolute error by mouse, and paired
+structural coordinates for the union of selected V segments. This study profiles
 TRB. Its skin-graft condition tests transfer across interventions.
 
 Available keys:

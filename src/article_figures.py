@@ -157,15 +157,12 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
     if thresholds is not None:
         ax.axvline(thresholds.initial_share_pct, color=PURPLE, linestyle=":", linewidth=0.70, alpha=0.87)
         ax.axhline(thresholds.retention_pct, color=PURPLE, linestyle=":", linewidth=0.70, alpha=0.87)
-        ax.text(
-            0.98, 0.018,
-            f"Share ≥ {thresholds.initial_share_pct:.3g}%\nRetention ≥ {thresholds.retention_pct:.4g}%",
-            transform=ax.transAxes, ha="right", va="bottom", fontsize=6.4 if compact else 8,
-            bbox={"facecolor": "white", "alpha": 0.88, "edgecolor": "none", "pad": 2},
-        )
-    else:
-        ax.text(0.98, 0.04, "Adaptive cutoffs unavailable", transform=ax.transAxes,
-                ha="right", fontsize=size)
+    cutoff_note = (
+        f"Share ≥ {thresholds.initial_share_pct:.3g}%   Retention ≥ {thresholds.retention_pct:.4g}%"
+        if thresholds is not None else "Adaptive cutoffs unavailable"
+    )
+    ax.text(0, 1.035, cutoff_note, transform=ax.transAxes, clip_on=False,
+            ha="left", va="bottom", fontsize=6.4 if compact else 8)
     if rows.empty:
         empty_axis(ax, "No V segments were available.")
         color_axis.set_axis_off()
@@ -194,30 +191,27 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
     colorbar.ax.tick_params(labelsize=6 if compact else 10, width=0.65, length=3)
 
     if not selected.empty:
-        # Reserve a label-only strip to the right of the data. Each fixed row has
-        # its own leader, so text cannot cover a point or another label.
-        base = x_upper
-        ax.set_xlim(0, 1.70 * base)
-        ticks = MaxNLocator(5 if compact else 7).tick_values(0, base)
-        ax.spines["bottom"].set_bounds(0, base)
-        ax.set_xticks([tick for tick in ticks if 0 <= tick <= base])
-        positions = np.linspace(0.94, 0.20, len(selected))
+        # The gene labels sit between the plot and the colorbar.
+        box = ax.get_position()
+        note_width = 0.105 if compact else 0.145
+        ax.set_position((box.x0, box.y0, box.width - note_width, box.height))
+        ax.xaxis.set_major_locator(MaxNLocator(4 if compact else 7))
+        positions = np.linspace(0.94, 0.20, len(selected)) if len(selected) > 4 else np.linspace(0.86, 0.46, len(selected))
         for fraction, row in zip(positions, selected.sort_values(RETENTION_COLUMN, ascending=False)
                                  .itertuples(index=False), strict=True):
             point = getattr(row, SHARE_COLUMN), getattr(row, RETENTION_COLUMN)
-            y = ax.get_ylim()[0] + fraction * np.ptp(ax.get_ylim())
-            ax.annotate(row.v, xy=point, xytext=(base * 1.06, y),
+            ax.annotate(row.v, xy=point, xytext=(1.045, fraction), textcoords="axes fraction",
                         ha="left", va="center", fontsize=6.5 if compact else 8.25,
                         arrowprops={"arrowstyle": "-", "lw": 0.45, "color": "0.4",
                                     "shrinkA": 2, "shrinkB": 3},
-                        clip_on=False, zorder=3)
+                        annotation_clip=False, zorder=3)
     return selected["v"].tolist()
 
 
 def plot_retention(profile, chain, stratum_title, *, thresholds):
     fig = article_canvas("retention")
-    ax = fig.add_axes((0.074, 0.110, 0.757, 0.844))
-    color_axis = fig.add_axes((0.883, 0.110, 0.032, 0.844))
+    ax = fig.add_axes((0.074, 0.123, 0.757, 0.804))
+    color_axis = fig.add_axes((0.883, 0.123, 0.032, 0.804))
     genes = _retention_panel(
         fig, ax, color_axis, profile, f"{chain} g1: {stratum_title} V-segment retention",
         thresholds=thresholds,

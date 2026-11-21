@@ -188,9 +188,10 @@ def plot_external_predictions(predictions, losses, summary):
         return fig
     y = np.arange(len(scored))
     ridge, baseline = 100 * scored["mae"], 100 * scored["baseline_mae"]
-    errors.hlines(y, ridge, baseline, color="0.55", lw=0.8)
-    errors.scatter(ridge, y, color=TERM_COLORS[0], label="Frozen score", zorder=2)
-    errors.scatter(baseline, y, color=TERM_COLORS[2], marker="s", label="Intercept only", zorder=2)
+    for row, a, b in zip(y, ridge, baseline, strict=True):
+        errors.plot([a, b], [row - 0.13, row + 0.13], color="0.55", lw=0.8)
+    errors.scatter(ridge, y - 0.13, color=TERM_COLORS[0], label="Frozen score", zorder=2)
+    errors.scatter(baseline, y + 0.13, color=TERM_COLORS[2], marker="s", label="Intercept only", zorder=2)
     errors.set(xlabel="Mouse MAE (percentage points)", yticks=y, yticklabels=scored["heldout_mouse"])
     errors.invert_yaxis()
     errors.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.24), ncol=2)
@@ -198,23 +199,33 @@ def plot_external_predictions(predictions, losses, summary):
 
 
 def plot_external_comparison(compared, summary):
-    """Display membership and frozen scores without overplotting tied values."""
-    fig, ax = plt.subplots(figsize=(7.1, max(2.9, 1.25 + 0.37 * len(compared))),
-                           layout="constrained")
+    """Compare the structural coordinates against the frozen cutoffs."""
+    fig, axes = plt.subplots(1, 2, figsize=(7.1, max(3.1, 1.25 + 0.32 * len(compared))),
+                             sharey=True, layout="constrained")
     if compared.empty:
-        empty_axis(ax, "No candidates passed the frozen cutoffs")
+        for ax in axes:
+            empty_axis(ax, "No candidates passed the frozen cutoffs")
         return fig
-    _ticks(ax, 8.5)
+
     y = np.arange(len(compared))
-    for x, (flag, score) in enumerate((("passes_internal", "E_internal"), ("passes_external", "E_external"))):
-        present = compared[flag].astype(bool)
-        ax.scatter(np.full(present.sum(), x), y[present], s=130, marker="s",
-                   facecolors=[TERM_COLORS[2]], alpha=0.25, edgecolors="none")
-        for row, (selected, value) in enumerate(zip(present, compared[score], strict=True)):
-            label = ("NA" if np.isnan(value) else f"{value:.3g}") if selected else "—"
-            ax.text(x, row, label, ha="center", va="center")
-    ax.set(xlim=(-0.5, 1.5), ylim=(len(y) - 0.5, -0.5),
-           xticks=[0, 1], xticklabels=["Internal marrow data", "Independent skin-graft data"],
-           yticks=y, yticklabels=compared["v_gene"], xlabel="Score among selected V segments")
-    ax.tick_params(axis="both", length=0)
+    for ax, coordinate, title, prefix in zip(
+        axes, ("initial_share_pct", "retention_pct"),
+        ("Initial share (%)", "Retention after subtraction (%)"), "AB", strict=True,
+    ):
+        _ticks(ax, 8.5)
+        _grid(ax, "x")
+        ax.set_title(f"{prefix}. {title}")
+        ax.set_xlabel(title)
+        ax.axvline(summary["frozen_gate"][coordinate], ls="--", color="black", linewidth=0.8)
+        for cohort, color, marker, label in (
+            ("internal", TERM_COLORS[0], "o", "Internal reference"),
+            ("external", TERM_COLORS[2], "s", "Independent cohort"),
+        ):
+            offset = -0.12 if cohort == "internal" else 0.12
+            ax.scatter(compared[f"{cohort}_{coordinate}"], y + offset, color=color,
+                       marker=marker, label=label, s=25, zorder=2)
+        ax.set_yticks(y, compared["v_gene"])
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+    axes[0].invert_yaxis()
+    axes[0].legend(loc="upper left", bbox_to_anchor=(0, -0.23), frameon=False, ncol=2)
     return fig

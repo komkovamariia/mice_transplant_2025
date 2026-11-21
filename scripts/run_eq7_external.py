@@ -308,37 +308,52 @@ def test_zheng(root, work, metadata):
             "g5_baseline_mae": float(losses["baseline_mae"].mean()) if losses["baseline_mae"].notna().any() else None,
             "frozen_gate": cutoffs._asdict(), "training_coefficients_sha256": weights_hash,
         }
+    output = work / "validation"
     _write_json({
         "study": ZHENG, "endpoint": "single_arm_g5_signed_recovery",
         "external_condition": "C57BL/6 marrow allograft in BALB/c, splenocytes at day 9",
         "external_counts": "read_fragments", "internal_counts": "UMI", "depth": sampling["depth"],
         "rarefaction_seed": sampling["seed"], "chains": summaries,
-    }, work / "validation" / "external_summary.json")
+    }, output / "external_summary.json")
+    plot_results(output, ZHENG, expected_weights={
+        chain: result["training_coefficients_sha256"] for chain, result in summaries.items()
+    })
     print(f"External validation outputs written to {work / 'validation'}")
 
 
 def main():
     root = repo_root()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("prepare", "test", "plot"))
+    parser.add_argument("stage", choices=("run", "prepare", "test", "plot"))
     parser.add_argument("--study", choices=(ZHENG, STUDY), default=ZHENG)
     parser.add_argument("--work-dir", type=Path)
     parser.add_argument("--figure-output", type=Path, help="Destination for the plot stage.")
     parser.add_argument("--trust4", type=Path, help="Compiled TRUST4 v1.1.7 run-trust4 path.")
     parser.add_argument("--reference", type=Path, help="Mouse IMGT reference bundled with TRUST4.")
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--expect-run", nargs=3, type=int,
+                        metavar=("STRUCTURAL_SEED", "CALIBRATION_SEED", "DEPTH"),
+                        help="Check the recorded internal run before evaluating external data.")
     args = parser.parse_args()
     work = (args.work_dir or root / "results" / "eq7_external" / args.study).resolve()
     metadata = pd.read_csv(root / "config" / f"{args.study.lower()}_samples.csv")
-    if args.stage == "prepare":
+    cache = input_dir(root, "all_combined")
+    if args.expect_run is not None:
+        seed_path = cache / "v_input_seeds.json"
+        seeds = json.loads(seed_path.read_text())
+        settings = [seeds[key] for key in ("structural_seed", "calibration_seed", "depth")]
+        if settings != args.expect_run:
+            parser.error(f"Expected cached settings {args.expect_run}; found {settings} in {seed_path}.")
+    if args.stage in {"run", "prepare"}:
         if args.trust4 is None or args.threads < 1:
-            parser.error("prepare requires --trust4 and a positive --threads value")
+            parser.error("run and prepare require --trust4 and a positive --threads value")
         trust4 = args.trust4.resolve()
         reference = args.reference or trust4.parent / "mouse" / "mouse_IMGT+C.fa"
         chains = tuple(V_GENES) if args.study == ZHENG else (CHAIN,)
         prepare_public(work, metadata, trust4, reference.resolve(), args.threads, chains)
-    elif args.stage == "plot":
-        cache = input_dir(root, "all_combined")
+    if args.stage == "prepare":
+        return
+    if args.stage == "plot":
         chains = V_GENES if args.study == ZHENG else (CHAIN,)
         hashes = {chain: checksum(cache / "eq7_weights" / f"{chain.lower()}_coefficients.csv")
                   for chain in chains}

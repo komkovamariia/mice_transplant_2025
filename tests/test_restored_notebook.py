@@ -112,6 +112,10 @@ def test_adaptive_cutoffs_use_upper_quartile_of_the_abundant_half():
     try:
         assert list(bubble.axes[0].lines[0].get_xdata()) == [thresholds.initial_share_pct] * 2
         assert list(bubble.axes[0].lines[1].get_ydata()) == [thresholds.retention_pct] * 2
+        axes = bubble.axes[0]
+        note = next(label for label in axes.texts if label.get_text().startswith("Share"))
+        assert note.get_position()[1] > 1
+        assert axes.spines["bottom"].get_bounds() is None
         assert genes == ["TRAV6"]
         assert [tick.get_text() for tick in dumbbell.axes[0].get_yticklabels()] == genes
         assert {tick.get_text() for tick in heatmap.axes[0].get_yticklabels()} == set(genes)

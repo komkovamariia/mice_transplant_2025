@@ -18,6 +18,14 @@ def save_publication_figure(figure, png):
     """Write matching PNG and vector PDF with consistent final-size type."""
     width, height = figure.get_size_inches()
     figure.set_size_inches(MDPI_WIDTH_IN, height * MDPI_WIDTH_IN / width)
+    for ax in figure.axes:
+        match = PANEL_LABEL.match(ax.get_title())
+        if match:
+            ax.text(0, 1.025, f"({match[1].lower()})", transform=ax.transAxes,
+                    ha="left", va="bottom")
+        ax.set_title("")
+    if figure._suptitle is not None:
+        figure._suptitle.set_text("")
     figure.canvas.draw()
     available = {font.name for font in fontManager.ttflist}
     family = next((name for name in MDPI_FONTS if name in available), "serif")
@@ -35,7 +43,7 @@ def save_publication_figure(figure, png):
                 spine.set_edgecolor("black")
     for item in figure.findobj(Text):
         label = item.get_text().replace("log₂", r"log$_2$")
-        label = PANEL_LABEL.sub(lambda match: f"({match[1].lower()})  ", label)
+        label = label.replace(" | ", "   ").replace(" · ", "   ")
         item.set_text("\n".join(line.removesuffix(".") for line in label.split("\n")))
         if to_rgb(item.get_color()) == (1.0, 1.0, 1.0):
             # Heatmap values need a light boundary on the darkest cells.

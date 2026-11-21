@@ -210,7 +210,7 @@ def plot_mds(points, chain, target_depth):
                 axis.scatter(visible["MDS1"], visible["MDS2"], marker=marker, s=27, color=color,
                              linewidth=0, alpha=0.9)
                 for px, py, mouse in visible[["MDS1", "MDS2", "mouse_id"]].itertuples(index=False, name=None):
-                    label = f"{str(mouse).rsplit('_', 1)[-1]}|{tissue[0]}"
+                    label = f"{str(mouse).rsplit('_', 1)[-1]} {tissue[0]}"
                     labels[axis].append(axis.text(px, py, label, fontsize=7.5, color="black",
                                                   ha="left", va="bottom"))
     ax.margins(y=0.09)

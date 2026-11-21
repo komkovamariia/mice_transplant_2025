@@ -111,45 +111,62 @@ def plot_recovery(frame, chain, title, *, selected_seed=None):
         counts = recovered.value_counts().reindex(range(size + 1), fill_value=0).sort_index()
         ax.bar(counts.index, counts, width=0.72, color=CORAL, alpha=0.88)
         median = recovered.median()
-        ax.axvline(median, color=PURPLE, ls=":", lw=1.4, label=f"Median {median:g}/{size}")
+        ax.axvline(median, color=PURPLE, ls=":", lw=1.0, label=f"Median {median:g}/{size}")
         selected = frame.loc[frame["seed"].eq(selected_seed), "n_recovered"].dropna()
         if len(selected):
             recovered_at_seed = int(selected.iat[0])
-            ax.scatter(recovered_at_seed, counts.loc[recovered_at_seed], s=90, facecolors="none",
-                       edgecolors=PURPLE, linewidths=1.8, label=f"Seed {selected_seed}")
+            ax.scatter(recovered_at_seed, counts.loc[recovered_at_seed], s=26, facecolors="none",
+                       edgecolors=PURPLE, linewidths=1.0, label=f"Seed {selected_seed}")
         ax.set_xlim(-0.6, size + 0.6)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.legend(frameon=False, loc="upper left")
-    ax.set(xlabel="Reference V segments recovered", ylabel="Number of reruns", title=f"{chain} g1: {title}")
+    ax.set(xlabel="Reference V segments recovered", ylabel="Number of draws", title=f"{chain} g1: {title}")
     ax.grid(False)
     fig.tight_layout()
     return fig
 
 
-def plot_regional_stability(profiles, genes, seed, chain):
-    import matplotlib.pyplot as plt
-    from .figures import CORAL, PURPLE
-
+def regional_tables(profiles, genes, seed):
     matrix = profiles.pivot(index="seed", columns="v", values="only_g1_share").reindex(columns=genes) * 100
     summary = matrix.describe().T if genes else pd.DataFrame(columns=["mean"])
     summary["representative_seed_share_pct"] = matrix.loc[seed] if seed in matrix.index else np.nan
-    fig, ax = plt.subplots(figsize=(max(7.8, 0.52 * len(genes) + 2), 5.2))
-    if genes:
+    return matrix, summary
+
+
+def plot_regional_stability(matrix, summary, seed, chain):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+    from .figures import CORAL, PURPLE
+
+    fig, ax = plt.subplots(figsize=(7.1, max(3.15, 1.4 + 0.26 * len(matrix.columns))), layout="constrained")
+    if len(matrix.columns):
+        genes = matrix.columns.tolist()
         positions = np.arange(1, len(genes) + 1)
-        ax.boxplot([matrix[gene].dropna() for gene in genes], positions=positions, patch_artist=True,
-                   boxprops={"facecolor": CORAL, "alpha": 0.55},
-                   medianprops={"color": PURPLE}, flierprops={"markersize": 2})
-        ax.scatter(positions, summary["mean"], s=22, color=PURPLE, label="Mean", zorder=3)
-        ax.scatter(positions, summary["representative_seed_share_pct"], s=48, facecolors="none",
-                   edgecolors="#242424", label=f"Seed {seed}", zorder=4)
-        ax.set_xticks(positions, genes, rotation=55, ha="right")
-        ax.legend(frameon=False, loc="best")
+        ax.boxplot([matrix[gene].dropna() for gene in genes], positions=positions, vert=False,
+                   widths=0.50, patch_artist=True, boxprops={"facecolor": "#f5cdbe", "linewidth": 0.65},
+                   medianprops={"color": PURPLE, "linewidth": 1.0},
+                   whiskerprops={"linewidth": 0.65}, capprops={"linewidth": 0.65},
+                   flierprops={"markersize": 2})
+        mean = ax.scatter(summary.reindex(genes)["mean"], positions, s=22, color=CORAL, marker="D",
+                          label="Mean", zorder=3)
+        handles = [Patch(facecolor="#f5cdbe", edgecolor="#444444", label="IQR and median"), mean]
+        chosen = summary.reindex(genes)["representative_seed_share_pct"]
+        if chosen.notna().any():
+            point = ax.scatter(chosen, positions, s=29, facecolors="none", edgecolors=PURPLE,
+                               linewidths=1.0, label=f"Seed {seed}", zorder=4)
+            handles.append(point)
+        ax.set_yticks(positions, genes)
+        ax.invert_yaxis()
+        ax.legend(handles=handles, frameon=False, loc="lower center",
+                  bbox_to_anchor=(0.5, 1.01), ncol=len(handles), columnspacing=1.2)
+        ax.set_title(f"{chain} g1: V-segment overlap across rarefaction draws", pad=27)
     else:
         ax.text(0.5, 0.5, "No V segments passed both cutoffs", ha="center", transform=ax.transAxes)
-    ax.set(ylabel="g1-only share of UMI for the V segment (%)", title=f"{chain} g1: rarefaction stability")
-    ax.grid(False)
-    fig.tight_layout()
-    return fig, matrix, summary
+        ax.set_title(f"{chain} g1: V-segment overlap across rarefaction draws")
+    ax.set(xlabel="g1-only share of V-segment UMI (%)", ylabel="V segment")
+    ax.grid(axis="x", color="#e9e9e9", linewidth=0.55)
+    ax.set_axisbelow(True)
+    return fig
 
 
 def write_stability(raw, displayed, metadata, depth, seed, chain, results, save_figure, *, reruns=None):
@@ -178,7 +195,8 @@ def write_stability(raw, displayed, metadata, depth, seed, chain, results, save_
         f"{chain}_g1_balanced_mouse_stability.png",
     )
 
-    figure, matrix, summary = plot_regional_stability(profiles, genes, seed, chain)
+    matrix, summary = regional_tables(profiles, genes, seed)
     matrix.to_csv(results / f"{prefix}_adaptive_only_g1_by_seed.csv")
     summary.to_csv(results / f"{prefix}_adaptive_only_g1_summary.csv")
-    save_figure(figure, f"{chain}_g1_adaptive_only_g1_stability.png")
+    save_figure(plot_regional_stability(matrix, summary, seed, chain),
+                f"{chain}_g1_adaptive_only_g1_stability.png")

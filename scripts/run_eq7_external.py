@@ -182,6 +182,7 @@ def test_public(root, work, metadata):
     from src.article_figures import ARTICLE_FONTS
     from src.eq7_figures import plot_external_comparison, plot_external_predictions
     from src.figures import apply_article_style
+    from src.publication_figures import save_publication_figure
     import matplotlib.pyplot as plt
 
     cache = input_dir(root, "all_combined")
@@ -235,7 +236,7 @@ def test_public(root, work, metadata):
         ("external_mouse_predictions", plot_external_predictions(predictions, losses, test_summary)),
         ("external_segment_comparison", plot_external_comparison(compared, test_summary)),
     ):
-        figure.savefig(output / f"{name}.png", dpi=300, facecolor="white")
+        save_publication_figure(figure, output / f"{name}.png")
         plt.close(figure)
     print(f"External validation outputs written to {output}")
 

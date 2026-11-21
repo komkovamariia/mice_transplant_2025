@@ -51,7 +51,7 @@ def plot_eq7_inputs(rows, weights, chain, status):
 
 def plot_eq7_regression(rows, outer, outer_status, chain, status):
     fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.7))
-    fig.subplots_adjust(left=0.09, right=0.98, wspace=0.28, top=0.83, bottom=0.22)
+    fig.subplots_adjust(left=0.09, right=0.98, wspace=0.29, top=0.81, bottom=0.28)
     fig.suptitle(f"{chain} Equation 7 fit and internal tuning", fontsize=13)
     panels = (
         (rows, "E", "Equation 7 score (E)", "A. Calibration observations", status),
@@ -115,7 +115,7 @@ def plot_eq7_regression(rows, outer, outer_status, chain, status):
     if handles:
         groups = [group for group in GROUP_MARKERS if group in handles]
         fig.legend([handles[group] for group in groups], groups, loc="lower center",
-                   bbox_to_anchor=(0.5, 0.055), ncol=len(groups), frameon=False, fontsize=9)
+                   bbox_to_anchor=(0.5, 0.025), ncol=len(groups), frameon=False, fontsize=9)
     if not outer_status.empty:
         missing = {"g5", "g6"}.difference(outer_status.loc[outer_status["status"].eq("scored"), "outer_group"])
         if missing:

@@ -92,13 +92,14 @@ def _write_csv(frame, path):
     pending.replace(path)
 
 
-def update_threshold_figures(root, stratum):
+def update_threshold_figures(root, stratum, *, figure_output=None):
     import matplotlib.pyplot as plt
     from src.article_figures import (
-        ARTICLE_FONTS, article_dpi, article_name, eligible_segments, plot_dumbbell, plot_edger,
+        ARTICLE_FONTS, article_name, eligible_segments, plot_dumbbell, plot_edger,
         plot_localization, plot_retention, plot_subsets,
     )
     from src.figures import apply_article_style
+    from src.publication_figures import save_publication_figure
     from src.strata import STRATUM_LABELS
     from src.structural_v import subset_v_tables, v_plot_profile
 
@@ -106,11 +107,18 @@ def update_threshold_figures(root, stratum):
     metadata = _metadata(cache)
     baseline = _baseline_results(cache)
     results = root / "results" / FIGURE_APPROACH / stratum
-    figures = root / "figures" / FIGURE_APPROACH / stratum
-    results.mkdir(parents=True, exist_ok=True)
+    figures = figure_output or root / "figures" / FIGURE_APPROACH / stratum
+    if figure_output is None:
+        results.mkdir(parents=True, exist_ok=True)
     records = []
 
     def estimate(chain, panel, tables, cohort=None):
+        if figure_output is not None:
+            from src.structural_v import structural_summary
+            from src.v_thresholds import fit_plot_thresholds
+
+            profile = structural_summary(tables)
+            return fit_plot_thresholds(100 * profile["initial_share"], 100 * profile["retention"])
         cutoffs, rows = fit_mouse_dropout_thresholds(tables, metadata, cohort_tables=cohort)
         records.extend({"chain": chain, "panel": panel, **row} for row in rows)
         return cutoffs
@@ -118,8 +126,7 @@ def update_threshold_figures(root, stratum):
     def save(figure, chain, panel):
         name = article_name(chain, panel)
         path = figures / chain / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        figure.savefig(path, dpi=article_dpi(name), facecolor="white")
+        save_publication_figure(figure, path)
         plt.close(figure)
 
     apply_article_style()
@@ -128,17 +135,21 @@ def update_threshold_figures(root, stratum):
     suffix = "" if stratum == "all_combined" else f" | {title}"
     for chain in CHAINS:
         tables = load_snapshot_tables(cache / "structural", chain, metadata)
-        audit = pd.read_csv(cache / f"{chain.lower()}_structural_depth_audit.csv", dtype={"sample_id": str})
-        cohort = {group: pd.DataFrame(columns=rows["sample_id"]) for group, rows in audit.groupby("group_no")}
+        cohort = None
+        if figure_output is None:
+            audit = pd.read_csv(cache / f"{chain.lower()}_structural_depth_audit.csv", dtype={"sample_id": str})
+            cohort = {group: pd.DataFrame(columns=rows["sample_id"]) for group, rows in audit.groupby("group_no")}
         thresholds = estimate(chain, stratum, tables, cohort)
         profile = v_plot_profile(tables)
         eligible = eligible_segments(profile, thresholds).sort_values(["score_s", "v"], ascending=[False, True])
-        _write_csv(eligible, results / f"{chain.lower()}_selected_v.csv")
+        if figure_output is None:
+            _write_csv(eligible, results / f"{chain.lower()}_selected_v.csv")
         save(plot_dumbbell(profile, chain, suffix, thresholds=thresholds), chain, "dumbbell")
         bubble, genes = plot_retention(profile, chain, title, thresholds=thresholds)
         save(bubble, chain, "retention")
         save(plot_localization(profile, genes, chain, suffix, thresholds=thresholds), chain, "localization")
-        _write_csv(pd.DataFrame({"v": genes}), results / f"{chain.lower()}_bubble_labels.csv")
+        if figure_output is None:
+            _write_csv(pd.DataFrame({"v": genes}), results / f"{chain.lower()}_bubble_labels.csv")
         ranking_file = baseline / f"{chain.lower()}v_ranking.csv"
         if stratum == "all_combined" or ranking_file.is_file():
             save(plot_edger(pd.read_csv(ranking_file), chain, suffix), chain, "edger")
@@ -150,15 +161,17 @@ def update_threshold_figures(root, stratum):
                 profiles[panel] = v_plot_profile(subset)
                 cutoffs[panel] = estimate(chain, panel, subset, cohort)
             save(plot_subsets(profiles, chain, thresholds_by_subset=cutoffs), chain, "cd4_cd8")
-    _write_csv(pd.DataFrame(records), results / "v_thresholds.csv")
-    print(f"Adaptive thresholds written to {results / 'v_thresholds.csv'}")
-    print(f"Figure archive written to {archive_first_approach_figures(output_name=FIGURE_APPROACH)}")
+    if figure_output is None:
+        _write_csv(pd.DataFrame(records), results / "v_thresholds.csv")
+        print(f"Adaptive thresholds written to {results / 'v_thresholds.csv'}")
+        print(f"Figure archive written to {archive_first_approach_figures(output_name=FIGURE_APPROACH)}")
 
 
-def update_stability(root, stratum):
+def update_stability(root, stratum, *, figure_output=None):
     import matplotlib.pyplot as plt
     from src.article_figures import ARTICLE_FONTS
     from src.figures import apply_article_style
+    from src.publication_figures import save_publication_figure
     from src.v_stability import write_stability
 
     cache = input_dir(root, stratum)
@@ -169,11 +182,11 @@ def update_stability(root, stratum):
     apply_article_style()
     plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ARTICLE_FONTS})
     for chain in CHAINS:
-        figures = root / "figures" / FIGURE_APPROACH / stratum / chain / "surplus"
+        figures = (figure_output or root / "figures" / FIGURE_APPROACH / stratum) / chain / "surplus"
         figures.mkdir(parents=True, exist_ok=True)
 
         def save(figure, filename):
-            figure.savefig(figures / filename, dpi=300, facecolor="white")
+            save_publication_figure(figure, figures / filename)
             plt.close(figure)
 
         write_stability(
@@ -182,7 +195,8 @@ def update_stability(root, stratum):
             metadata, seeds["depth"], seeds["structural_seed"], chain, results, save,
         )
     print(f"Stability results written to {results}")
-    print(f"Figure archive written to {archive_first_approach_figures(output_name=FIGURE_APPROACH)}")
+    if figure_output is None:
+        print(f"Figure archive written to {archive_first_approach_figures(output_name=FIGURE_APPROACH)}")
 
 
 def calibration_dir(root, cache, chain):
@@ -433,6 +447,7 @@ def fit_weights(root, cache, top, ridge):
     )
     from src.eq7_figures import plot_eq7_inputs, plot_eq7_regression, plot_eq7_scores, plot_ridge_selection
     from src.figures import apply_article_style
+    from src.publication_figures import save_publication_figure
     from src.spike_in import EDGER_SUCCESS
 
     metadata = _metadata(cache)
@@ -511,7 +526,7 @@ def fit_weights(root, cache, top, ridge):
             ("penalty", plot_ridge_selection(curve, chain)),
             ("selected_v_scores", plot_eq7_scores(scored, chain, score_status)),
         ):
-            figure.savefig(figure_dir / f"{chain}_g1_eq7_{name}.png", dpi=300, facecolor="white")
+            save_publication_figure(figure, figure_dir / f"{chain}_g1_eq7_{name}.png")
             plt.close(figure)
         print(f"{chain} full-cohort calibration: {status}. Reports written to {output}")
     _write_csv(pd.DataFrame(summaries), output / "calibration_summary.csv")
@@ -520,7 +535,11 @@ def fit_weights(root, cache, top, ridge):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("all", "prepare", "thresholds", "stability", "evidence", "weights"))
+    parser.add_argument("stage", choices=("all", "prepare", "thresholds", "stability", "evidence", "weights", "redraw"))
+    parser.add_argument("--components", nargs="+", choices=("structural", "stability", "eq7"),
+                        help="Select the cached figure families to redraw.")
+    parser.add_argument("--figure-output", type=Path, help="Destination for redraw or stability figures.")
+    parser.add_argument("--stability-results", type=Path, help="Directory with adaptive stability CSVs.")
     parser.add_argument("--baseline-results", type=Path, help="Previous all_combined results directory.")
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--metadata-csv", type=Path)
@@ -533,7 +552,11 @@ def main():
         parser.error("--top must be positive and --ridge must be finite and positive")
     root, stratum = repo_root(), "all_combined"
     cache = input_dir(root, stratum)
-    if args.stage == "prepare":
+    if args.stage == "redraw":
+        from scripts.redraw_v_figures import redraw
+
+        redraw(root, stratum, args)
+    elif args.stage == "prepare":
         prepare_inputs(root, stratum, args.baseline_results, _base_environment(args))
     elif args.stage in {"all", "thresholds"}:
         prepare_if_missing(root, stratum, args.baseline_results, _base_environment(args))
@@ -543,7 +566,7 @@ def main():
             fit_weights(root, cache, args.top, args.ridge)
     elif args.stage == "stability":
         prepare_if_missing(root, stratum, args.baseline_results, _base_environment(args))
-        update_stability(root, stratum)
+        update_stability(root, stratum, figure_output=args.figure_output)
     elif args.stage == "evidence":
         build_weight_evidence(root, cache)
     else:

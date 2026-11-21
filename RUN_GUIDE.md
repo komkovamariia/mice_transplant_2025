@@ -35,6 +35,37 @@ Standard runs use dynamic V-segment cutoffs and write them to
 `results/01_set_count/<stratum>/v_thresholds.csv`. Use
 `--v-thresholds fixed` to reproduce the historic 0.6% and 70% graphical cutoffs.
 
+### Redraw article figures from a completed run
+
+The adaptive figure directory initially has five per-chain figures after
+`thresholds`. The ridge diagnostic figures are written during `weights`.
+The two recovery histograms and per-segment boxplot are generated in
+`stability` and stored in the chain's `surplus` directory.
+
+```bash
+python scripts/run_v_updates.py redraw --components structural stability
+python scripts/run_v_updates.py redraw --components eq7
+```
+
+The redraws use saved count snapshots, structural and stability tables,
+and the completed Equation 7 CSVs. The files are written as PNG and vector
+PDF to `figures/01_set_count_mdpi/all_combined/`. The redraw stage leaves
+analysis tables untouched. Omit `--components` for all three families.
+Use `--figure-output PATH` for a different destination. The new text
+sizes are calibrated to a manuscript figure width of approximately
+180 mm.
+
+If adaptive stability tables have never been computed, run:
+
+```bash
+python scripts/run_v_updates.py stability --figure-output figures/01_set_count_mdpi/all_combined
+```
+
+This computes structural draws from the saved snapshots and updates the
+stability CSV files. It does not rerun differential-abundance tests or
+regression. If Equation 7 is still running, redraw its figures after
+`calibration_summary.csv` becomes available in the `eq7_weights` directory.
+
 ### Refresh thresholds and calibrate Equation 7
 
 With an existing combined baseline, run:

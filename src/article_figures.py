@@ -149,8 +149,6 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
     if compact:
         _ticks(color_axis, 6, box=True)
     _title(ax, title, size=9 if compact else 13, pad=4)
-    if compact:
-        ax.title.set_fontweight("bold")
     size = 7 if compact else 12
     ax.set_xlabel(
         "V-segment share in the complete group g1, %" if compact else
@@ -237,8 +235,6 @@ def _localization_panel(fig, ax, color_axis, profile, genes, chain, title, *, co
     for spine in ax.spines.values():
         spine.set_visible(False)
     _title(ax, title, size=9 if compact else 13, pad=7)
-    if compact:
-        ax.title.set_fontweight("bold")
     ax.set_xlabel("g1-containing overlap region", fontsize=size, labelpad=6)
     ax.set_ylabel(f"{chain} V segment", fontsize=size, labelpad=7)
     if not compact:
@@ -291,22 +287,27 @@ def plot_localization(profile, genes, chain, suffix="", *, thresholds):
 
 def plot_subsets(profiles, chain, *, thresholds_by_subset):
     fig = article_canvas("cd4_cd8")
+    fig.set_figheight(fig.get_figheight() * 1.08)
     fig.suptitle(f"{chain} g1: separate CD8+ and CD4+ structural analyses",
-                 fontsize=15, fontweight="bold", y=0.987)
+                 fontsize=11, y=0.985)
     for row, subset in enumerate(("CD8+", "CD4+")):
-        bottom = 0.546 - row * 0.473
-        bubble = fig.add_axes((0.041, bottom - 0.036, 0.403, 0.390))
-        bubble_color = fig.add_axes((0.450, bottom - 0.036, 0.016, 0.390))
-        heatmap = fig.add_axes((0.605, bottom, 0.319, 0.354))
-        heatmap_color = fig.add_axes((0.939, bottom, 0.016, 0.354))
+        bottom = 0.580 - row * 0.465
+        bubble = fig.add_axes((0.083, bottom, 0.335, 0.312))
+        bubble_color = fig.add_axes((0.428, bottom, 0.014, 0.312))
+        heatmap = fig.add_axes((0.641, bottom, 0.299, 0.312))
+        heatmap_color = fig.add_axes((0.951, bottom, 0.014, 0.312))
         profile = profiles[subset]
         thresholds = thresholds_by_subset[subset]
         genes = _retention_panel(fig, bubble, bubble_color, profile,
                                  f"{subset} V-segment retention", compact=True, thresholds=thresholds)
         _localization_panel(fig, heatmap, heatmap_color, profile, genes, chain,
                             f"{subset} overlap-region composition", compact=True, thresholds=thresholds)
-        panel_letter(bubble, "AC"[row], x=-0.067, y=1.09, fontsize=15)
-        panel_letter(heatmap, "BD"[row], x=-0.275, y=1.10, fontsize=15)
+        bubble.set_xlabel("Initial aaV share (%)" if row else "", labelpad=3)
+        bubble_color.set_ylabel("Regional entropy", labelpad=3)
+        heatmap.set_ylabel("")
+        heatmap.set_xlabel("Overlap region" if row else "", labelpad=3)
+        panel_letter(bubble, "AC"[row], x=-0.165, y=1.12, fontsize=10)
+        panel_letter(heatmap, "BD"[row], x=-0.175, y=1.12, fontsize=10)
     return fig
 
 
@@ -461,3 +462,39 @@ def plot_spike_in(frame, chain):
         note = f"No tested dose achieved recovery and significance for all {family_size} aaV."
     fig.text(0.5, 0.032, note, ha="center", fontsize=10.5)
     return fig
+
+
+def plot_group_overlap(tables, chain):
+    """Show two three-group projections and the exact four-group subtraction."""
+    from matplotlib.patches import Circle
+
+    sets = {group: set(tables[group].index) for group in ("g1", "g2", "g4", "g5", "g6")}
+    target = sets["g1"]
+    figure = article_canvas("overlap")
+    ax = figure.add_axes((0.04, 0.055, 0.92, 0.87), aspect="equal")
+    ax.axis("off")
+    for group, x, y, color, lx, ly in (
+        ("g5", -2.12, 0.8, "#f8837a", -3.10, 1.52),
+        ("g6", -2.12, -0.8, "#a9589b", -3.10, -1.58),
+        ("g1", 0, 0, "#ffcf9b", 0, -1.22),
+        ("g2", 2.12, 0.8, "#ffac7c", 3.10, 1.52),
+        ("g4", 2.12, -0.8, "#865fa0", 3.10, -1.58),
+    ):
+        ax.add_patch(Circle((x, y), 1.435, facecolor=color, edgecolor="#a19b99", alpha=0.42, lw=0.7))
+        ax.text(lx, ly, f"{group}\n{len(sets[group]):,}", ha="center", va="center", zorder=5)
+
+    def count(x, y, keys):
+        ax.text(x, y, f"{len(keys):,}", ha="center", va="center", zorder=6,
+                bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.25, "alpha": 0.85})
+
+    for side, top, bottom in ((-1, sets["g5"], sets["g6"]), (1, sets["g2"], sets["g4"])):
+        count(side * 2.70, 0.77, top - (target | bottom))
+        count(side * 2.70, -0.90, bottom - (target | top))
+        count(side * 2.12, 0, (top & bottom) - target)
+        count(side * 1.12, 0.48, (target & top) - bottom)
+        count(side * 1.12, -0.48, (target & bottom) - top)
+        count(side * 1.38, 0, target & top & bottom)
+    count(0, 0, target.difference(*(sets[g] for g in ("g2", "g4", "g5", "g6"))))
+    ax.set(xlim=(-3.62, 3.62), ylim=(-2.25, 2.25))
+    figure.suptitle(f"{chain} g1: aaV clonotype overlap with the four background groups", y=0.976)
+    return figure

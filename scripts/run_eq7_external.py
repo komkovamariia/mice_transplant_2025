@@ -179,12 +179,6 @@ def frozen_weights(cache, chain):
 
 
 def test_public(root, work, metadata):
-    from src.article_figures import ARTICLE_FONTS
-    from src.eq7_figures import plot_external_comparison, plot_external_predictions
-    from src.figures import apply_article_style
-    from src.publication_figures import save_publication_figure
-    import matplotlib.pyplot as plt
-
     cache = input_dir(root, "all_combined")
     weights, weights_hash = frozen_weights(cache, CHAIN)
     seeds = json.loads((cache / "v_input_seeds.json").read_text())
@@ -230,15 +224,35 @@ def test_public(root, work, metadata):
         **summarize_transfer(losses, compared),
     }
     _write_json(test_summary, output / "external_summary.json")
-    apply_article_style()
-    plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ARTICLE_FONTS, "axes.grid": False})
-    for name, figure in (
-        ("external_mouse_predictions", plot_external_predictions(predictions, losses, test_summary)),
-        ("external_segment_comparison", plot_external_comparison(compared, test_summary)),
-    ):
-        save_publication_figure(figure, output / f"{name}.png")
-        plt.close(figure)
+    plot_results(output, STUDY, expected_weights={CHAIN: weights_hash})
     print(f"External validation outputs written to {output}")
+
+
+def plot_results(source, study, *, expected_weights, output=None):
+    import matplotlib.pyplot as plt
+
+    from src.eq7_figures import plot_external_comparison, plot_external_predictions
+    from src.publication_figures import save_publication_figure
+
+    summary = json.loads((source / "external_summary.json").read_text())
+    if summary["study"] != study:
+        raise ValueError(f"The saved external summary belongs to {summary['study']}, not {study}.")
+    output = source if output is None else output
+    targets = {"TRA": source / "TRA", "TRB": source / "TRB"} if study == ZHENG else {CHAIN: source}
+    for chain, table_dir in targets.items():
+        provenance = summary["chains"][chain] if study == ZHENG else summary
+        if provenance["training_coefficients_sha256"] != expected_weights[chain]:
+            raise ValueError(f"The saved {study} {chain} test used different frozen coefficients.")
+        predictions = pd.read_csv(table_dir / "external_mouse_predictions.csv")
+        losses = pd.read_csv(table_dir / "external_mouse_losses.csv")
+        figure = plot_external_predictions(predictions, losses, provenance)
+        save_publication_figure(figure, output / f"{chain}_external_mouse_predictions.png")
+        plt.close(figure)
+    if study == STUDY:
+        compared = pd.read_csv(source / "external_segment_comparison.csv")
+        figure = plot_external_comparison(compared, summary)
+        save_publication_figure(figure, output / f"{CHAIN}_external_segment_comparison.png")
+        plt.close(figure)
 
 
 def test_zheng(root, work, metadata):
@@ -306,9 +320,10 @@ def test_zheng(root, work, metadata):
 def main():
     root = repo_root()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("prepare", "test"))
+    parser.add_argument("stage", choices=("prepare", "test", "plot"))
     parser.add_argument("--study", choices=(ZHENG, STUDY), default=ZHENG)
     parser.add_argument("--work-dir", type=Path)
+    parser.add_argument("--figure-output", type=Path, help="Destination for the plot stage.")
     parser.add_argument("--trust4", type=Path, help="Compiled TRUST4 v1.1.7 run-trust4 path.")
     parser.add_argument("--reference", type=Path, help="Mouse IMGT reference bundled with TRUST4.")
     parser.add_argument("--threads", type=int, default=4)
@@ -322,6 +337,13 @@ def main():
         reference = args.reference or trust4.parent / "mouse" / "mouse_IMGT+C.fa"
         chains = tuple(V_GENES) if args.study == ZHENG else (CHAIN,)
         prepare_public(work, metadata, trust4, reference.resolve(), args.threads, chains)
+    elif args.stage == "plot":
+        cache = input_dir(root, "all_combined")
+        chains = V_GENES if args.study == ZHENG else (CHAIN,)
+        hashes = {chain: checksum(cache / "eq7_weights" / f"{chain.lower()}_coefficients.csv")
+                  for chain in chains}
+        plot_results(work / "validation", args.study, expected_weights=hashes,
+                     output=args.figure_output)
     elif args.study == ZHENG:
         test_zheng(root, work, metadata)
     else:

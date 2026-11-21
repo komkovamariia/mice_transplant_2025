@@ -2,10 +2,10 @@
 
 import re
 
-from matplotlib import patheffects, rc_context
+from matplotlib import rc_context
 from matplotlib.colors import to_rgb
 from matplotlib.font_manager import FontProperties, findfont, fontManager
-from matplotlib.text import Text
+from matplotlib.text import Annotation, Text
 from matplotlib.transforms import Bbox
 
 
@@ -14,13 +14,13 @@ MDPI_FONTS = ["TeX Gyre Pagella", "P052", "STIXGeneral", "DejaVu Serif"]
 PANEL_LABEL = re.compile(r"^([A-D])\.\s+")
 
 
-def save_publication_figure(figure, png):
-    """Write matching PNG and vector PDF with consistent final-size type."""
+def save_publication_figure(figure, png, *, pdf=False, panel_letters=True):
+    """Write a print-resolution PNG and optionally a vector PDF."""
     width, height = figure.get_size_inches()
     figure.set_size_inches(MDPI_WIDTH_IN, height * MDPI_WIDTH_IN / width)
     for ax in figure.axes:
         match = PANEL_LABEL.match(ax.get_title())
-        if match:
+        if match and panel_letters:
             ax.text(0, 1.025, f"({match[1].lower()})", transform=ax.transAxes,
                     ha="left", va="bottom")
         ax.set_title("")
@@ -45,14 +45,18 @@ def save_publication_figure(figure, png):
         label = item.get_text().replace("log₂", r"log$_2$")
         label = label.replace(" | ", "   ").replace(" · ", "   ")
         item.set_text("\n".join(line.removesuffix(".") for line in label.split("\n")))
-        if to_rgb(item.get_color()) == (1.0, 1.0, 1.0):
-            # Heatmap values need a light boundary on the darkest cells.
-            item.set_path_effects([patheffects.withStroke(linewidth=1.5, foreground="white")])
-        item.set_color("black")
+        if to_rgb(item.get_color()) != (1.0, 1.0, 1.0):
+            item.set_color("black")
         item.set_math_fontfamily("stix")
         item.set_fontfamily(family)
         item.set_fontweight("normal")
-        item.set_fontsize(sizes.get(item, 8.25))
+        if re.fullmatch(r"\([a-d]\)", label):
+            item.set_visible(panel_letters)
+            item.set_fontsize(9)
+        elif isinstance(item, Annotation):
+            item.set_fontsize(min(item.get_fontsize(), 8.25))
+        else:
+            item.set_fontsize(sizes.get(item, min(item.get_fontsize(), 8.25)))
     for artist in (figure._suptitle, figure._supxlabel, figure._supylabel):
         if artist is not None:
             artist.set_fontsize(10 if artist is figure._suptitle else 9)
@@ -67,4 +71,5 @@ def save_publication_figure(figure, png):
     pdf_fonttype = 3 if font_path.lower().endswith(".otf") else 42
     with rc_context({"pdf.fonttype": pdf_fonttype}):
         figure.savefig(png, dpi=450, bbox_inches=box, facecolor="white")
-        figure.savefig(png.with_suffix(".pdf"), dpi=450, bbox_inches=box, facecolor="white")
+        if pdf:
+            figure.savefig(png.with_suffix(".pdf"), dpi=450, bbox_inches=box, facecolor="white")

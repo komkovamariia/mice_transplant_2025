@@ -92,7 +92,7 @@ def _write_csv(frame, path):
     pending.replace(path)
 
 
-def update_threshold_figures(root, stratum, *, figure_output=None):
+def update_threshold_figures(root, stratum, *, figure_output=None, baseline_results=None):
     import matplotlib.pyplot as plt
     from src.article_figures import (
         ARTICLE_FONTS, article_name, eligible_segments, plot_dumbbell, plot_edger,
@@ -105,7 +105,7 @@ def update_threshold_figures(root, stratum, *, figure_output=None):
 
     cache = input_dir(root, stratum)
     metadata = _metadata(cache)
-    baseline = _baseline_results(cache)
+    baseline = baseline_results or _baseline_results(cache)
     results = root / "results" / FIGURE_APPROACH / stratum
     figures = figure_output or root / "figures" / FIGURE_APPROACH / stratum
     if figure_output is None:
@@ -151,7 +151,7 @@ def update_threshold_figures(root, stratum, *, figure_output=None):
         if figure_output is None:
             _write_csv(pd.DataFrame({"v": genes}), results / f"{chain.lower()}_bubble_labels.csv")
         ranking_file = baseline / f"{chain.lower()}v_ranking.csv"
-        if stratum == "all_combined" or ranking_file.is_file():
+        if ranking_file.is_file():
             save(plot_edger(pd.read_csv(ranking_file), chain, suffix), chain, "edger")
         if stratum == "all_combined":
             profiles, cutoffs = {}, {}
@@ -539,6 +539,9 @@ def main():
     parser.add_argument("--components", nargs="+", choices=("structural", "stability", "eq7"),
                         help="Select the cached figure families to redraw.")
     parser.add_argument("--figure-output", type=Path, help="Destination for redraw or stability figures.")
+    parser.add_argument("--expect-run", type=int, nargs=3,
+                        metavar=("STRUCTURAL_SEED", "CALIBRATION_SEED", "DEPTH"),
+                        help="Check cached run settings before redrawing.")
     parser.add_argument("--stability-results", type=Path, help="Directory with adaptive stability CSVs.")
     parser.add_argument("--baseline-results", type=Path, help="Previous all_combined results directory.")
     parser.add_argument("--data-dir", type=Path)

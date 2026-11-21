@@ -142,8 +142,6 @@ def bubble_candidates(profile, limit, thresholds):
 
 
 def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thresholds):
-    from adjustText import adjust_text
-
     rows, selected = bubble_candidates(profile, 10 if compact else 11, thresholds)
     _ticks(ax, 7 if compact else 10, box=not compact)
     if compact:
@@ -160,8 +158,8 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
         ax.axvline(thresholds.initial_share_pct, color=PURPLE, linestyle=":", linewidth=0.70, alpha=0.87)
         ax.axhline(thresholds.retention_pct, color=PURPLE, linestyle=":", linewidth=0.70, alpha=0.87)
         ax.text(
-            0.98, 0.035,
-            f"Share ≥ {thresholds.initial_share_pct:.3g}% · Retention ≥ {thresholds.retention_pct:.4g}%",
+            0.98, 0.018,
+            f"Share ≥ {thresholds.initial_share_pct:.3g}%\nRetention ≥ {thresholds.retention_pct:.4g}%",
             transform=ax.transAxes, ha="right", va="bottom", fontsize=6.4 if compact else 8,
             bbox={"facecolor": "white", "alpha": 0.88, "edgecolor": "none", "pad": 2},
         )
@@ -195,26 +193,24 @@ def _retention_panel(fig, ax, color_axis, profile, title, *, compact=False, thre
     )
     colorbar.ax.tick_params(labelsize=6 if compact else 10, width=0.65, length=3)
 
-    texts = []
-    for row in selected.itertuples(index=False):
-        x, y = getattr(row, SHARE_COLUMN), getattr(row, RETENTION_COLUMN)
-        texts.append(ax.text(x, y + 1.8, row.v, ha="center", va="bottom", fontsize=6 if compact else 9.5))
-    if texts:
-        adjust_text(
-            texts, x=rows[SHARE_COLUMN].to_numpy(), y=rows[RETENTION_COLUMN].to_numpy(),
-            target_x=selected[SHARE_COLUMN].to_numpy(), target_y=selected[RETENTION_COLUMN].to_numpy(),
-            expand=(1.12, 1.25), force_static=(0.3, 0.35), force_text=(0.55, 0.7),
-            iter_lim=300, ensure_inside_axes=True, ax=ax,
-        )
-        for label, row in zip(texts, selected.itertuples(index=False), strict=True):
-            diameter = np.sqrt((22 + 302 * getattr(row, COUNT_COLUMN) / rows[COUNT_COLUMN].max())
-                               * (0.60 if compact else 1))
-            ax.annotate(
-                "", xy=(getattr(row, SHARE_COLUMN), getattr(row, RETENTION_COLUMN)),
-                xytext=label.get_position(), zorder=2.5,
-                arrowprops={"arrowstyle": "-", "color": "black", "lw": 0.65,
-                            "patchA": label, "shrinkA": 0.8, "shrinkB": diameter / 2},
-            )
+    if not selected.empty:
+        # Reserve a label-only strip to the right of the data. Each fixed row has
+        # its own leader, so text cannot cover a point or another label.
+        base = x_upper
+        ax.set_xlim(0, 1.70 * base)
+        ticks = MaxNLocator(5 if compact else 7).tick_values(0, base)
+        ax.spines["bottom"].set_bounds(0, base)
+        ax.set_xticks([tick for tick in ticks if 0 <= tick <= base])
+        positions = np.linspace(0.94, 0.20, len(selected))
+        for fraction, row in zip(positions, selected.sort_values(RETENTION_COLUMN, ascending=False)
+                                 .itertuples(index=False), strict=True):
+            point = getattr(row, SHARE_COLUMN), getattr(row, RETENTION_COLUMN)
+            y = ax.get_ylim()[0] + fraction * np.ptp(ax.get_ylim())
+            ax.annotate(row.v, xy=point, xytext=(base * 1.06, y),
+                        ha="left", va="center", fontsize=6.5 if compact else 8.25,
+                        arrowprops={"arrowstyle": "-", "lw": 0.45, "color": "0.4",
+                                    "shrinkA": 2, "shrinkB": 3},
+                        clip_on=False, zorder=3)
     return selected["v"].tolist()
 
 

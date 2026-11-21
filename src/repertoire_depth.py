@@ -188,9 +188,6 @@ def plot_mds(points, chain, target_depth):
         ax.set_xlim(x[0] - margin, x[-1] + margin)
         axes = (ax,)
 
-    from adjustText import adjust_text
-
-    labels = {axis: [] for axis in axes}
     handles = []
     for axis in axes:
         _grid(axis, "both")
@@ -209,16 +206,7 @@ def plot_mds(points, chain, target_depth):
                 visible = rows.loc[rows["MDS1"].between(lower, upper)]
                 axis.scatter(visible["MDS1"], visible["MDS2"], marker=marker, s=27, color=color,
                              linewidth=0, alpha=0.9)
-                for px, py, mouse in visible[["MDS1", "MDS2", "mouse_id"]].itertuples(index=False, name=None):
-                    label = f"{str(mouse).rsplit('_', 1)[-1]} {tissue[0]}"
-                    labels[axis].append(axis.text(px, py, label, fontsize=7.5, color="black",
-                                                  ha="left", va="bottom"))
     ax.margins(y=0.09)
-    for axis, texts in labels.items():
-        if texts:
-            adjust_text(texts, ax=axis, force_text=(0.42, 0.55), force_pull=(0.10, 0.12),
-                        expand=(1.05, 1.2), iter_lim=150, min_arrow_len=5,
-                        arrowprops={"arrowstyle": "-", "color": "black", "lw": 0.45})
     fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.830, 0.885),
                fontsize=7.5, frameon=True, borderpad=0.4, handletextpad=0.45)
     return fig

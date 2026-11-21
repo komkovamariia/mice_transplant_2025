@@ -48,8 +48,7 @@ python scripts/run_v_updates.py redraw --components eq7
 ```
 
 The redraws use saved count snapshots, structural and stability tables,
-and the completed Equation 7 CSVs. The files are written as PNG and vector
-PDF to `figures/01_set_count_mdpi/all_combined/`. The redraw stage leaves
+and the completed Equation 7 CSVs. The files are written as print-resolution PNG to `figures/01_set_count_mdpi/all_combined/`. The redraw stage leaves
 analysis tables untouched. Omit `--components` for all three families.
 Use `--figure-output PATH` for a different destination. The new text
 sizes are calibrated to a manuscript figure width of approximately
@@ -398,3 +397,24 @@ early F2/MDS depth checks. The paper's depth checks use
 [`src/repertoire_depth.py`](src/repertoire_depth.py) from the standard analysis.
 The redraw stage reads the saved depth and MDS tables. Library summaries and
 exploratory CDR3 and diversity analyses do not need to run to redraw the paper.
+
+For the manuscript anchor, verify the cached seeds and depth before drawing:
+
+```bash
+python scripts/run_v_updates.py redraw --expect-run 1249 1031 15000
+```
+
+The values refer to the structural snapshot, calibration rarefaction and
+target depth, in that order. Redraw leaves the existing cache and coefficients
+in place and writes print-resolution PNGs. Older PDFs are not overwritten.
+
+To redraw an external evaluation from its saved validation tables:
+
+```bash
+python scripts/run_eq7_external.py plot --study PRJNA954716
+python scripts/run_eq7_external.py plot --study PRJNA650133
+```
+
+Use `--work-dir` if the existing results are outside the default
+`results/eq7_external/<BioProject>/` directory. The plot step checks the
+coefficient checksum and does not run TRUST4 or refit the model.

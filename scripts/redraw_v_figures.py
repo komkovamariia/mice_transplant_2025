@@ -46,6 +46,29 @@ def redraw_stability(source, output, chain, seed, depth):
         save(figure, output / f"{chain}_g1_{name}.png")
 
 
+def redraw_threshold_audit(source, output, chain):
+    path = source / "v_thresholds.csv"
+    if not path.is_file():
+        return
+    results = pd.read_csv(path).query("chain == @chain and panel == 'all_combined'")
+    full = results.loc[results["level"].eq("final")]
+    omitted = results.loc[results["level"].eq("mouse")]
+    if len(full) != 1 or omitted.empty:
+        return
+    fig, axes = plt.subplots(1, 2, figsize=(7.1, 3.5), layout="constrained")
+    for i, (ax, column, label) in enumerate(zip(
+        axes, ("initial_share_pct", "retention_pct"), ("Initial share cutoff (%)", "Retention cutoff (%)"),
+        strict=True,
+    )):
+        ax.set_title(f"{'AB'[i]}. Cutoffs")
+        ax.axvline(full[column].iat[0], color="black", linestyle="--", lw=0.8)
+        ax.scatter(omitted[column], range(len(omitted)), color="#805282", s=27)
+        ax.set(xlabel=label, yticks=range(len(omitted)), yticklabels=omitted["omitted_mouse"])
+        ax.invert_yaxis()
+        ax.grid(axis="x", alpha=0.22)
+    save(fig, output / chain / "surplus" / f"{chain}_g1_threshold_audit.png")
+
+
 def redraw_eq7(source, output, chain):
     summary_path = source / "calibration_summary.csv"
     if not summary_path.is_file():
@@ -102,12 +125,17 @@ def redraw(root, stratum, args):
     snapshot_ready = provenance.is_file() and (cache / "mouse_metadata.csv").is_file() and all(
         (cache / "structural" / "count_snapshots" / f"{chain}_manifest.json").is_file() for chain in CHAINS
     )
+    seeds = json.loads(provenance.read_text()) if provenance.is_file() else {}
+    if args.expect_run is not None:
+        actual = [seeds.get(key) for key in ("structural_seed", "calibration_seed", "depth")]
+        if actual != args.expect_run:
+            raise ValueError(f"Expected cached settings {args.expect_run}; found {actual} in {provenance}.")
     if snapshot_ready:
-        seeds = json.loads(provenance.read_text())
         recorded_baseline = root / seeds["baseline_results"]
-        if args.baseline_results is not None and baseline.resolve() != recorded_baseline.resolve():
+        if args.baseline_results is None:
+            baseline = recorded_baseline
+        elif recorded_baseline.is_dir() and baseline.resolve() != recorded_baseline.resolve():
             raise ValueError("The supplied baseline differs from the saved structural snapshots.")
-        baseline = recorded_baseline
         metadata = pd.read_csv(cache / "mouse_metadata.csv", dtype={"sample_id": str, "mouse_id": str})
     else:
         metadata = None
@@ -115,11 +143,17 @@ def redraw(root, stratum, args):
     run = json.loads(summary.read_text()) if summary.is_file() else {}
     seed = seeds["structural_seed"] if snapshot_ready else run.get("structural_downsample_seed")
     depth = seeds["depth"] if snapshot_ready else run.get("structural_downsample_umi", 15000)
+    if snapshot_ready and run and (
+        run.get("structural_downsample_seed") != seed or run.get("structural_downsample_umi") != depth
+    ):
+        raise ValueError("The baseline metadata disagree with the cached structural seed or depth.")
+    if seeds:
+        print(f"Structural seed {seed}, calibration seed {seeds['calibration_seed']}, depth {depth}")
     components = set(args.components or ("structural", "stability", "eq7"))
 
     if "structural" in components:
         if snapshot_ready:
-            update_threshold_figures(root, stratum, figure_output=output)
+            update_threshold_figures(root, stratum, figure_output=output, baseline_results=baseline)
         else:
             print("Structural snapshots are unavailable. Run the prepare stage to restore adaptive plots.")
         for chain in CHAINS:
@@ -137,7 +171,14 @@ def redraw(root, stratum, args):
                 plot_seed = settings.get("structural_downsample_seed", seed)
                 plot_depth = settings.get("structural_downsample_umi", depth)
             redraw_stability(source, output, chain, plot_seed, plot_depth)
+            redraw_threshold_audit(adaptive, output, chain)
     if "eq7" in components:
         for chain in CHAINS:
             redraw_eq7(cache / "eq7_weights", output, chain)
+    if seeds:
+        output.mkdir(parents=True, exist_ok=True)
+        fields = ("structural_seed", "calibration_seed", "depth")
+        (output / "figure_run.json").write_text(
+            json.dumps({key: seeds[key] for key in fields}, indent=2) + "\n",
+        )
     print(f"Figure directory: {output}")

@@ -3,7 +3,7 @@ import pytest
 
 from scripts.run_eq7_external import read_trust4_report
 from src.eq7_calibration import FEATURES, score_candidates
-from src.eq7_external import compare_shortlists, panel_cutoffs, summarize_transfer
+from src.eq7_external import compare_shortlists, mouse_prediction_losses, mouse_predictions, panel_cutoffs, summarize_transfer
 
 
 def test_external_shortlist_uses_only_the_frozen_internal_gate():
@@ -41,13 +41,37 @@ def test_union_loss_charges_membership_once_and_handles_zero_scores():
 def test_trust4_counts_keep_productive_unambiguous_trb(tmp_path):
     report = tmp_path / "report.tsv"
     report.write_text(
-        "#count\tCDR3aa\tV\n"
-        "40\tCASSF\tTRBV2*01|TRBV2*02\n"
-        "10\tCASSF\tTRBV2\n"
-        "30\tCASSF\tTRBV2*01|TRBV4*02\n"
-        "70\tCASS*\tTRBV2*01\n"
-        "11\tCASSF\tTRAV2*01\n"
+        "#count\tCDR3aa\tV\tJ\n"
+        "40\tCASSF\tTRBV2*01|TRBV2*02\tTRBJ1-1*01\n"
+        "10\tCASSF\tTRBV2\tTRBJ1-1*01\n"
+        "30\tCASSF\tTRBV2*01|TRBV4*02\tTRBJ1-1*01\n"
+        "70\tCASS*\tTRBV2*01\tTRBJ1-1*01\n"
+        "11\tCASSF\tTRAV2*01\tTRAJ1*01\n"
+        "20\tCAVF\tTRAV14D-3/DV8*01\tTRAJ1*01\n"
+        "50\tCAVF\tTRAV14D-3/DV8*01\tTRDJ1*01\n"
     )
     counts, qc = read_trust4_report(report, "test")
     assert counts.to_dict() == {("CASSF", "TRBV2"): 50}
     assert qc["n_productive_trb_read_fragments"] == 50
+    counts, qc = read_trust4_report(report, "test", "TRA")
+    assert counts.to_dict() == {("CASSF", "TRAV2"): 11, ("CAVF", "TRAV14D-3-DV8"): 20}
+    assert qc["n_productive_tra_read_fragments"] == 31
+
+
+def test_single_arm_leaves_unobserved_segments_and_low_depth_mice_unscored():
+    index = pd.Index([("CAVF", "TRAV2"), ("CAWF", "TRAV2")], tupleize_cols=False)
+    g1 = pd.DataFrame({"internal": [1]}, index=index[:1])
+    empty = g1.iloc[:0, :0]
+    reference = {"g1": g1, "g5": empty, "g6": empty}
+    external = {"g5": pd.DataFrame({"passed": [1, 1]}, index=index)}
+    metadata = pd.DataFrame({
+        "group_no": ["g5", "g5"], "mouse_id": ["one", "two"], "sample_id": ["passed", "low_depth"],
+    })
+    candidates = pd.DataFrame({"v_gene": ["TRAV2", "TRAV3"], "predicted_response": [-0.4, 0.2]})
+    predictions = mouse_predictions(reference, candidates, external, metadata, baseline_prediction=0)
+    assert predictions["response"].iat[0] == -0.5
+    assert pd.isna(predictions["response"].iat[1])
+    losses = mouse_prediction_losses(predictions, metadata)
+    assert losses["n_observed"].tolist() == [1, 0]
+    assert losses["mae"].iat[0] == pytest.approx(0.1)
+    assert pd.isna(losses["mae"].iat[1])

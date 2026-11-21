@@ -1,0 +1,4 @@
+sample_id,mouse_id,mouse_no,group_no,condition,biosample,library_name,fastq_md5_r1,fastq_md5_r2
+SRR12364670,T1-01,1,g5,marrow_allograft_day9,SAMN15693173,T1-D09-MAJ-BC-SPL-01,5612b5cb9d5e5f57986c2f47b81f8835,f838eabf696ef3df8b137d5a046da320
+SRR12364659,T1-03,3,g5,marrow_allograft_day9,SAMN15693174,T1-D09-MAJ-BC-SPL-03,fe639998394b0725cb2f6dd8c78dc292,8748db19bfc1c8526358962f1c69e170
+SRR12364648,T1-04,4,g5,marrow_allograft_day9,SAMN15693175,T1-D09-MAJ-BC-SPL-04,8c049fa77e3958794b41eb9b1a38b8e0,72bc3be9628df2d6b47a6ae6d39de6f0

@@ -104,18 +104,38 @@ plots per chain. They show the standardized design matrix, calibration
 scatter and internal predictions, penalty curve and V scores by contribution.
 The fitted and predicted response adds an intercept to E.
 
-### Independent TRB validation
+### External marrow-transplant check in Zheng et al.
 
-Use [PRJNA954716](https://www.ebi.ac.uk/ena/browser/view/PRJNA954716)
-for the independent test. It includes three intact BALB/c mice and four
-BALB/c recipients of C57BL/6 skin grafts, profiled in splenic CD4+ T cells.
-Build [TRUST4 v1.1.7](https://github.com/liulab-dfci/TRUST4/releases/tag/v1.1.7)
-and run the two stages from the repository. The public assembly can run
-while the internal fit is in progress.
+Build [TRUST4 v1.1.7](https://github.com/liulab-dfci/TRUST4/releases/tag/v1.1.7).
+The default external study is [PRJNA650133](https://www.ebi.ac.uk/ena/browser/view/PRJNA650133).
+The sample manifest selects three BALB/c spleens on day 9 after C57BL/6
+marrow transplantation and pins both FASTQ checksums for each run.
 
 ```bash
 python scripts/run_eq7_external.py prepare --trust4 ~/tools/TRUST4-1.1.7/run-trust4
 python scripts/run_eq7_external.py test
+```
+
+The test uses the frozen TRA and TRB weights with internal splenic CD4+
+and CD8+ libraries pooled by mouse. It uses the internal g1 versus g5
+reference to compute cutoffs, candidates and predictions. From Zheng's
+three spleens it computes observed signed recovery and mouse-level mean
+absolute error for the g5-like arm, with the intercept-only baseline.
+The archive has no corresponding intact BALB/c spleen group. This check
+uses a single arm, so it exports no external group contrast, list Jaccard
+index or E union loss. Read-fragment and UMI counts retain their own units.
+See `results/eq7_external/PRJNA650133/validation/` for the summary and
+chain-specific tables.
+
+### Two-arm TRB validation in Tereshchenko et al.
+
+[PRJNA954716](https://www.ebi.ac.uk/ena/browser/view/PRJNA954716)
+includes three intact BALB/c mice and four
+BALB/c recipients of C57BL/6 skin grafts, profiled in splenic CD4+ T cells.
+
+```bash
+python scripts/run_eq7_external.py prepare --study PRJNA954716 --trust4 ~/tools/TRUST4-1.1.7/run-trust4
+python scripts/run_eq7_external.py test --study PRJNA954716
 ```
 
 The `prepare` stage downloads the seven paired FASTQ sets, checks their

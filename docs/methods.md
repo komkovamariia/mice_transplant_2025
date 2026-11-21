@@ -144,7 +144,32 @@ the preset penalty is 0.1. A g1 tuning holdout with an additional g1 omission
 leaves one mouse and violates edgeR's replication requirement. The g1
 responses participate in the final triplet calibration.
 
-### Independent TRB transfer
+### External marrow-transplant check in Zheng et al.
+
+The primary marrow-transfer check uses the three day-9 BALB/c recipient
+spleen libraries from Zheng et al. (2020), BioProject
+[PRJNA650133](https://www.ebi.ac.uk/ena/browser/view/PRJNA650133). The donor
+strain is C57BL/6. The published transplant included mature donor T cells
+with the marrow. The libraries contain unsorted splenocytes. Both chains
+are extracted with TRUST4 v1.1.7, retaining productive calls with a
+chain-consistent J and an unambiguous V at gene resolution. External
+structural depth is measured in read fragments, with the same nominal
+depth used for the internal libraries measured in UMI.
+
+The internal reference pools splenic CD4+ and CD8+ samples by mouse
+for the g1 versus g5 count contrast. For the structural branch, the
+reference is the union of eligible rarefied splenic libraries in each
+group. Candidate cutoffs and predictions use this internal reference,
+and the combined-run TRA and TRB coefficients stay frozen. For each
+eligible external mouse, the response is the negative fraction of its
+unique aaV for a candidate V segment observed in the internal g1-only
+set. The output reports coverage and mean absolute error averaged by
+mouse within the g5-like arm, with an intercept-only reference. An
+intact BALB/c spleen arm is required to reproduce the two-group count
+contrast and compare independently selected candidate lists. The
+Zheng cohort supports the single-arm recovery endpoint.
+
+### Two-arm external TRB transfer
 
 The external panel uses Tereshchenko et al. (2023), BioProject
 [PRJNA954716](https://www.ebi.ac.uk/ena/browser/view/PRJNA954716).

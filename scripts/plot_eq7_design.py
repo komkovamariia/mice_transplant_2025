@@ -30,29 +30,27 @@ def main():
     output = parser.parse_args().output
     output.mkdir(parents=True, exist_ok=True)
     gray, violet, peach = "#f7f7f7", "#f1e5f4", "#fce9dd"
-    diagram(output / "parallel_scores.pdf", 1.30, [
-        (0.25, .79, "Shared structural shortlist\nLog residual aaV count", gray),
-        (0.75, .79, "Raw aaV counts\nedgeR and Fisher", gray),
-        (0.25, .38, "Binary evidence ridge", violet),
-        (0.75, .38, "Continuous evidence ridge", peach),
-        (0.50, .10, "Common endpoint: joint recovery contrast", gray),
-    ], [(0, 2), (0, 3), (1, 2), (1, 3), (2, 4), (3, 4)])
+    diagram(output / "parallel_scores.pdf", 1.55, [
+        (.50, .82, "Shared structural shortlist and log residual aaV count\nRaw counts for statistical evidence", gray),
+        (.25, .44, "Binary evidence ridge\naaV-level edgeR and Fisher flags", violet),
+        (.75, .44, "Continuous evidence ridge\nV-usage edgeR and Fisher effects", peach),
+        (.50, .09, "Common endpoint: joint recovery contrast", gray),
+    ], [(0, 1), (0, 2), (1, 3), (2, 3)])
     diagram(output / "paired_holdout.pdf", 2.40, [
         (.50, .86, "Outer test: leave out one mouse from each of g1, g5 and g6", gray),
-        (.25, .58, "Retained outer mice\nCutoffs and both sets of predictors", gray),
-        (.75, .58, "Retained outer mice\nInner held-out triplets give training outcomes", gray),
-        (.25, .29, "Fit binary evidence ridge", violet),
-        (.75, .29, "Fit continuous evidence ridge", peach),
-        (.50, .07, "Score the same test segments against the observed joint contrast", gray),
-    ], [(0, 1), (0, 2), (1, 3), (2, 4), (3, 5), (4, 5)])
-    diagram(output / "paired_external.pdf", 1.75, [
-        (.21, .79, "Matched internal spleen panel\nFix candidates and predictors", gray),
-        (.21, .30, "Freeze both fitted models\nfrom internal triplets", gray),
-        (.56, .79, "Skin-graft cohort\nIntact and graft-arm TRB", gray),
-        (.56, .30, "Marrow-graft cohort\nRecipient TRA and TRB", gray),
-        (.87, .79, "Joint contrast\nand error", peach),
-        (.87, .30, "Recipient recovery\nonly", violet),
-    ], [(0, 2), (1, 3), (2, 4), (3, 5)])
+        (.50, .60, "Retained outer mice provide cutoffs and both predictor sets\nInner held-out triplets provide training outcomes", gray),
+        (.25, .32, "Fit binary evidence ridge", violet),
+        (.75, .32, "Fit continuous evidence ridge", peach),
+        (.50, .08, "Score the same test segments against the observed joint contrast", gray),
+    ], [(0, 1), (1, 2), (1, 3), (2, 4), (3, 4)])
+    diagram(output / "paired_external.pdf", 2.00, [
+        (.50, .82, "Fix candidates and predictors in matched internal spleen panels\nFreeze both ridge fits trained on internal triplets", gray),
+        (.25, .43, "Skin-graft cohort\nIntact and graft-arm TRB", gray),
+        (.75, .43, "Marrow-graft cohort\nRecipient TRA and TRB", gray),
+        (.25, .10, "Joint contrast and prediction error", peach),
+        (.75, .10, "Descriptive recipient recovery", violet),
+    ], [(0, 1), (0, 2), (1, 3), (2, 4)])
+
 
 
 if __name__ == "__main__":

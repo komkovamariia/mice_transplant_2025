@@ -57,7 +57,7 @@ def plots(output, results):
         draw_markers(ax, y, frame)
         ax.set_xlabel(f"{chain} joint recovery contrast")
         legend(ax)
-        save_publication_figure(fig, output / f"eq7_joint_{panel}.png", panel_letters=False)
+        save_publication_figure(fig, output / f"eq7_joint_{panel}.png", panel_letters=False, width_in=3.45)
         plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(3.45, 2.2), layout="constrained")
@@ -72,7 +72,7 @@ def plots(output, results):
     ax.axvline(1, color="#383838", lw=0.75, ls=":")
     ax.set_xlabel("MAE relative to Constant baseline")
     legend(ax)
-    save_publication_figure(fig, output / "eq7_joint_c.png", panel_letters=False)
+    save_publication_figure(fig, output / "eq7_joint_c.png", panel_letters=False, width_in=3.45)
     plt.close(fig)
 
     predictions_file = results / "external_predictions.csv"
@@ -99,7 +99,7 @@ def plots(output, results):
         ax.set(xlabel="Observed TRB contrast", ylabel="Predicted TRB contrast")
         style(ax)
     legend(ax)
-    save_publication_figure(fig, output / "eq7_joint_d.png", panel_letters=False)
+    save_publication_figure(fig, output / "eq7_joint_d.png", panel_letters=False, width_in=3.45)
     plt.close(fig)
 
 

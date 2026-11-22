@@ -14,10 +14,10 @@ MDPI_FONTS = ["TeX Gyre Pagella", "P052", "STIXGeneral", "DejaVu Serif"]
 PANEL_LABEL = re.compile(r"^([A-D])\.\s+")
 
 
-def save_publication_figure(figure, png, *, pdf=False, panel_letters=True):
+def save_publication_figure(figure, png, *, pdf=False, panel_letters=True, width_in=MDPI_WIDTH_IN):
     """Write a print-resolution PNG and optionally a vector PDF."""
     width, height = figure.get_size_inches()
-    figure.set_size_inches(MDPI_WIDTH_IN, height * MDPI_WIDTH_IN / width)
+    figure.set_size_inches(width_in, height * width_in / width)
     for ax in figure.axes:
         match = PANEL_LABEL.match(ax.get_title())
         if match and panel_letters:

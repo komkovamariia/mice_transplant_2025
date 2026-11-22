@@ -49,7 +49,7 @@ def fold_path(directory, parent, filename):
     return matches[0]
 
 
-def load_inputs(root, cache, chain, metadata):
+def load_inputs(root, cache, chain, metadata, *, panel_type=RecoveryPanel):
     expected_calibration = calibration_dir(root, cache, chain)
     calibration = fold_path(
         expected_calibration, cache / "calibration" / chain, f"count_snapshots/{chain}_manifest.json",
@@ -62,7 +62,7 @@ def load_inputs(root, cache, chain, metadata):
     rows = pd.read_csv(
         evidence / "stratified_fold_evidence.csv", dtype={"heldout_mouse": str},
     )
-    panel = RecoveryPanel(pool_mice(tables, metadata))
+    panel = panel_type(pool_mice(tables, metadata))
     folds = dict(tuple(rows.groupby("evidence_split")))
     by_group = panel.by_group()
     seen = {
@@ -94,7 +94,7 @@ def check_input_recovery(rows, panel, query, observed):
         np.testing.assert_allclose(reconstructed, (100 if group == "g1" else -100) * frozen, atol=1e-12)
 
 
-def ranking_rows(rows, measured, mice, sizes, ranks):
+def ranking_rows(rows, measured, mice, sizes, ranks, *, recovery_column="weighted_molecules_per_million"):
     for name, score in ranks.items():
         for size in sizes:
             keep = top_weights(score, size)
@@ -105,7 +105,7 @@ def ranking_rows(rows, measured, mice, sizes, ranks):
                 yield {
                     "model": name, "top_k": size, "group": group, "mouse": mouse,
                     "count_recovery_pct": clone[defined] @ keep[defined] / denom if denom else np.nan,
-                    "weighted_molecules_per_million": molecules @ keep / keep.sum(),
+                    recovery_column: molecules @ keep / keep.sum(),
                     "effective_k": min(size, len(rows)),
                 }
 
@@ -144,8 +144,11 @@ def evaluate_internal(chain, panel, folds, device):
     return pd.DataFrame(ranks), pd.concat(predictions, ignore_index=True)
 
 
-def external_validation(root, cache, chain, metadata, args, fit):
-    raw = load_snapshot_tables(cache / "raw", chain, metadata)
+def external_validation(root, cache, chain, metadata, args, fit, *,
+                        panel_type=RecoveryPanel, augment=None, model_names=None,
+                        recovery_column="weighted_molecules_per_million", rankers=RANKERS, raw=None):
+    if raw is None:
+        raw = load_snapshot_tables(cache / "raw", chain, metadata)
     predictions, recoveries = [], []
     for study, directory, subsets in (
         ("PRJNA954716", args.skin, ("cd4",)),
@@ -162,7 +165,7 @@ def external_validation(root, cache, chain, metadata, args, fit):
         train_tables = subset_v_tables({group: raw[group] for group in ("g1", "g5")}, matched["sample_id"])
         sampling = {"depth": 15000, "seed": 1031}
         internal, _ = downsample_group_tables(train_tables, **sampling)
-        ref_panel = RecoveryPanel(pool_mice(internal, matched))
+        ref_panel = panel_type(pool_mice(internal, matched))
         external_meta = pd.read_csv(root / "config" / f"{study.lower()}_samples.csv", dtype={"mouse_id": str})
         counts, qc = external_raw(directory, external_meta, chain)
         expected_qc = pd.read_csv(validation / "external_library_qc.csv").set_index("sample_id")
@@ -170,7 +173,7 @@ def external_validation(root, cache, chain, metadata, args, fit):
         if not expected_qc.loc[actual_qc.index, "report_sha256"].eq(actual_qc).all():
             raise ValueError(f"{study} TRUST4 reports disagree with the recorded run checksums.")
         external, _ = downsample_group_tables(counts, **sampling)
-        query = RecoveryPanel(pool_mice(external, external_meta), align_to=ref_panel)
+        query = panel_type(pool_mice(external, external_meta), align_to=ref_panel)
         genes = ref_panel.genes.get_indexer(candidates["v_gene"])
         if np.any(genes < 0):
             raise ValueError(f"{study} candidate V segments disagree with the matched internal panel.")
@@ -182,12 +185,15 @@ def external_validation(root, cache, chain, metadata, args, fit):
                 measured[idx, 0], (100 if group == "g1" else -100) * recorded.reindex(candidates["v_gene"]),
                 atol=1e-12,
             )
-        ranks = {name: candidates[term].to_numpy() for name, term in RANKERS.items()}
+        if augment is not None:
+            candidates = augment(candidates, train_tables, matched)
+        ranks = {name: candidates[term].to_numpy() for name, term in rankers.items()}
         ranks["legacy_score_frozen"] = candidates["E"].to_numpy()
         for target, models in fit.items():
             for penalty, model in models.items():
                 prediction = model.predict(candidates)
-                model_name = COUNT_MODEL if target == COUNT_CONTRAST else MOLECULE_MODEL
+                model_name = (model_names[target] if model_names is not None else
+                              COUNT_MODEL if target == COUNT_CONTRAST else MOLECULE_MODEL)
                 if penalty == 1:
                     ranks[model_name] = prediction
                 observations = np.full(len(candidates), np.nan)
@@ -197,17 +203,19 @@ def external_validation(root, cache, chain, metadata, args, fit):
                     observations = measured[list(groups["g1"]), offset].mean(axis=0) - measured[list(groups["g5"]), offset].mean(axis=0)
                 predictions.append(pd.DataFrame({
                     "study": study, "chain": chain, "v_gene": candidates["v_gene"],
-                    "model": model_name, "outcome": target, "penalty": penalty, "observed": observations,
+                    "model": model_name, "outcome": target if model_names is None else args.outcome,
+                    "penalty": penalty, "observed": observations,
                     "prediction": prediction, "constant_baseline": model.baseline,
                     "status": "observed_two_arm_contrast" if study == "PRJNA954716" else "graft_arm_only",
                 }))
-        for row in ranking_rows(candidates, measured, query.mice, ORDERS[chain], ranks):
+        for row in ranking_rows(candidates, measured, query.mice, ORDERS[chain], ranks, recovery_column=recovery_column):
             recoveries.append({"study": study, "chain": chain, **row})
     return pd.DataFrame(recoveries), predictions
 
 
-def ranking_summary(ranks, keys):
-    endpoints = ["count_recovery_pct", "weighted_molecules_per_million"]
+def ranking_summary(ranks, keys, *, recovery_column="weighted_molecules_per_million",
+                    contrast_column=MOLECULE_CONTRAST):
+    endpoints = ["count_recovery_pct", recovery_column]
     mice = ranks.groupby([*keys, "group", "mouse"])[endpoints].mean().reset_index()
     groups = mice.groupby([*keys, "group"])[endpoints].mean()
     results = []
@@ -219,7 +227,7 @@ def ranking_summary(ranks, keys):
                 row[f"{group}_{endpoint}"] = means[endpoint].get(group, np.nan)
         if {"g1", "g5"} <= set(means.index):
             ctl = means.loc[means.index != "g1"].mean()
-            row[COUNT_CONTRAST], row[MOLECULE_CONTRAST] = means.loc["g1"] - ctl
+            row[COUNT_CONTRAST], row[contrast_column] = means.loc["g1"] - ctl
         results.append(row)
     return pd.DataFrame(results)
 

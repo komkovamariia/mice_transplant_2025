@@ -92,7 +92,7 @@ def contrasts(measurements):
     return measurements[0] - measurements[1:].mean(axis=0)
 
 
-def training_contrasts(panel, omitted, measurements):
+def training_contrasts(panel, omitted, measurements, *, recovery_column=MOLECULE_CONTRAST):
     """Build outcomes from a symmetric triplet of retained animals at a time."""
     by_group = panel.by_group(omitted)
     triplets = list(product(*(by_group[group] for group in GROUPS)))
@@ -116,7 +116,7 @@ def training_contrasts(panel, omitted, measurements):
     count, molecule = contrasts(group_means)
     return pd.DataFrame({
         "v_gene": panel.genes, "signed_recovery_pct": signed,
-        COUNT_CONTRAST: count, MOLECULE_CONTRAST: molecule,
+        COUNT_CONTRAST: count, recovery_column: molecule,
     })
 
 

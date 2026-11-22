@@ -152,6 +152,8 @@ The fitted and predicted response adds an intercept to E.
 For the follow-up comparison of the signed-recovery model with group
 contrasts in unique-aaV and abundance-weighted recovery, see
 [Equation 7 recovery contrasts](docs/eq7_weighted_recovery.md).
+For the matched comparison of binary and continuous evidence on one
+recovery outcome, see [Joint recovery](docs/eq7_continuous_recovery.md).
 
 ### External marrow-transplant check in Zheng et al.
 

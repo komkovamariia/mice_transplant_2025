@@ -64,10 +64,11 @@ def selection_figure(benchmark, usage):
                         textcoords="offset points", ha="left" if value >= 0 else "right", va="center")
         ax.set(xlabel=f"{chain} contrast (percentage points)", yticks=y, yticklabels=list(order.values()))
         if values.min() >= 0:
-            ax.set_xlim(-0.6, 11.3)
+            ax.set_xlim(0, 11.3)
         else:
-            ax.set_xlim(-1.85, 0.25)
-        ax.axvline(0, color="black", lw=0.65)
+            ax.set_xlim(-1.85, 0)
+        if values.max() < 0:
+            ax.spines["left"].set_visible(False)
         ax.xaxis.set_major_locator(MaxNLocator(5))
         style(ax)
     axes[0].set_ylim(len(order) - 0.4, -0.6)

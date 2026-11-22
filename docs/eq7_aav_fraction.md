@@ -3,7 +3,9 @@
 This experiment compares a new aaV-level evidence encoding with the existing
 binary aaV indicators and the V-level continuous-effect model.
 
-**No mouse partitions, rarefaction or structural cutoffs are recalculated.**
+**No mouse partitions, rarefaction or fold evidence are regenerated.**
+The lightweight shortlist thresholds are re-evaluated from the saved
+fold-level structural coordinates, exactly as in the existing baseline.
 The script reads the existing 75 triplets per chain and 1249/1031/15000
 snapshots under `results/eq7_benchmark_1249/_inputs`. Only the aaV-level
 edgeR and Fisher tests that are necessary for the new continuous predictors

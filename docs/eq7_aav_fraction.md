@@ -90,3 +90,29 @@ required before claiming additional predictive value. The 75 triplets
 reuse 13 biological mice, so their mean errors are descriptive rather
 than 75 statistically independent estimates. This experiment does not
 establish TCR antigen specificity or GVHD association.
+
+## External check with frozen coefficients
+
+Use the same checkout and the existing benchmark cache and frozen fraction
+results. Extract the manuscript source archive and set `article_outputs`
+to its `analysis_outputs` directory. Each public-study directory needs the
+TRUST4 reports from the archived analysis. Their SHA-256 checksums are
+verified against the manuscript inputs.
+
+```bash
+python scripts/run_eq7_fraction_external.py \
+  --cache results/eq7_benchmark_1249/_inputs \
+  --fraction-results results/eq7_aav_fraction_1249 \
+  --article-inputs "$article_outputs" \
+  --skin results/eq7_external/PRJNA954716 \
+  --marrow results/eq7_external/PRJNA650133 \
+  --workers 4
+```
+
+Supply either public cohort or both. The run recomputes the fraction
+predictors in the matched internal spleen panel and checks recovery in
+the recorded external libraries. It uses the saved coefficients at both
+penalties. It writes per-segment predictions, error summaries and ranking
+summaries to `results/eq7_aav_fraction_external_1249`. The skin cohort
+supports the two-arm TRB contrast. The marrow cohort reports recovery in
+recipients for TRA and TRB.

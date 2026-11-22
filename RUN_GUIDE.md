@@ -149,6 +149,10 @@ plots per chain. They show the standardized design matrix, calibration
 scatter and internal predictions, penalty curve and V scores by contribution.
 The fitted and predicted response adds an intercept to E.
 
+For the follow-up comparison of the signed-recovery model with group
+contrasts in unique-aaV and abundance-weighted recovery, see
+[Equation 7 recovery contrasts](docs/eq7_weighted_recovery.md).
+
 ### External marrow-transplant check in Zheng et al.
 
 Build [TRUST4 v1.1.7](https://github.com/liulab-dfci/TRUST4/releases/tag/v1.1.7).

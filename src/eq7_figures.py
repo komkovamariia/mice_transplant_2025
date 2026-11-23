@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import Normalize
+from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 
 from .article_figures import _grid, _ticks, empty_axis
@@ -200,32 +201,48 @@ def plot_external_predictions(predictions, losses, summary):
 
 def plot_external_comparison(compared, summary):
     """Compare the structural coordinates against the frozen cutoffs."""
-    fig, axes = plt.subplots(1, 2, figsize=(7.1, max(3.1, 1.25 + 0.32 * len(compared))),
-                             sharey=True, layout="constrained")
+    fig, axes = plt.subplots(1, 2, figsize=(7.1, max(2.8, 1.50 + 0.23 * len(compared))),
+                             sharey=True)
+    fig.subplots_adjust(left=0.124, right=0.985, top=0.81, bottom=0.29, wspace=0.20)
     if compared.empty:
         for ax in axes:
             empty_axis(ax, "No candidates passed the frozen cutoffs")
         return fig
 
     y = np.arange(len(compared))
-    for ax, coordinate, title, prefix in zip(
+    cohorts = (
+        ("internal", TERM_COLORS[0], "o", "Internal marrow study", -0.14),
+        ("external", TERM_COLORS[2], "s", "External skin-graft study", 0.14),
+    )
+    for ax, coordinate, title, letter in zip(
         axes, ("initial_share_pct", "retention_pct"),
-        ("Initial share (%)", "Retention after subtraction (%)"), "AB", strict=True,
+        ("Initial share (%)", "Retention after subtraction (%)"), "ab", strict=True,
     ):
         _ticks(ax, 8.5)
         _grid(ax, "x")
-        ax.set_title(f"{prefix}. {title}")
+        ax.text(0, 1.08, f"({letter})", transform=ax.transAxes, fontsize=9)
         ax.set_xlabel(title)
-        ax.axvline(summary["frozen_gate"][coordinate], ls="--", color="black", linewidth=0.8)
-        for cohort, color, marker, label in (
-            ("internal", TERM_COLORS[0], "o", "Internal reference"),
-            ("external", TERM_COLORS[2], "s", "Independent cohort"),
-        ):
-            offset = -0.12 if cohort == "internal" else 0.12
-            ax.scatter(compared[f"{cohort}_{coordinate}"], y + offset, color=color,
-                       marker=marker, label=label, s=25, zorder=2)
+        cutoff = summary["frozen_gate"][coordinate]
+        ax.text(0.5, 1.08, f"Internal cutoff ≥ {cutoff:.3f}%",
+                transform=ax.transAxes, ha="center", fontsize=8.25)
+        ax.axvline(cutoff, ls="--", color="0.30", linewidth=0.8)
+        for cohort, color, marker, _, offset in cohorts:
+            values = compared[f"{cohort}_{coordinate}"]
+            passes = compared[f"passes_{cohort}"].to_numpy(dtype=bool)
+            for selected, face in ((passes, color), (~passes, "none")):
+                ax.scatter(values[selected], y[selected] + offset, facecolor=face,
+                           edgecolor=color, marker=marker, s=30, linewidths=0.85, zorder=3)
+        low, high = ax.get_xlim()
+        ax.set_xlim(min(low, cutoff - 0.035 * (high - low)), max(high, cutoff))
         ax.set_yticks(y, compared["v_gene"])
         ax.xaxis.set_major_locator(MaxNLocator(5))
     axes[0].invert_yaxis()
-    axes[0].legend(loc="upper left", bbox_to_anchor=(0, -0.23), frameon=False, ncol=2)
+    handles = [
+        Line2D([], [], marker=marker, color=color, ls="", label=label, ms=5)
+        for _, color, marker, label, _ in cohorts
+    ]
+    handles.append(Line2D([], [], marker="o", markerfacecolor="none", color="0.30",
+                          ls="", label="Below either cutoff", ms=5))
+    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.53, 0.02),
+               fontsize=8, frameon=False, ncol=3)
     return fig

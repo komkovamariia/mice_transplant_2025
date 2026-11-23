@@ -116,3 +116,25 @@ penalties. It writes per-segment predictions, error summaries and ranking
 summaries to `results/eq7_aav_fraction_external_1249`. The skin cohort
 supports the two-arm TRB contrast. The marrow cohort reports recovery in
 recipients for TRA and TRB.
+
+## Structural cutoffs in the manuscript
+
+Figure 13 uses the matched splenic CD4+ TRB reference. Its internal
+profile is calculated by subtracting g5 from g1 after rarefaction
+with seed 1031. It gives cutoffs of 1.368% initial share and 94.499%
+retention. The same numerical cutoffs are applied to the external
+skin-graft profile. A V segment passes when both coordinates are at
+or above their cutoffs. Internal TRBV2 is on the share cutoff and
+internal TRBV14 is on the retention cutoff. Both qualify. Internal
+TRBV17 passes the share cutoff and misses the retention cutoff.
+It qualifies externally. Figure 13 displays the union, with hollow
+markers wherever a cohort fails either cutoff.
+
+The descriptive thresholds in Figure 5b (pooled TRB) and Figure
+S6c (CD4+ TRB) are fitted separately at seed 1249. They pool spleen
+and thymus and subtract g2, g4, g5 and g6 from g1. Figure 5b also
+pools the two cell subsets. Table 2 records those descriptive cutoffs.
+
+Use the `plot` stage of `scripts/run_eq7_external.py` with the
+recorded PRJNA954716 validation directory to regenerate the
+structural transfer figure as PNG and PDF.

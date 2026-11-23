@@ -1,9 +1,11 @@
 import pandas as pd
 import pytest
+from matplotlib import pyplot as plt
 
 from scripts.run_eq7_external import read_trust4_report
 from src.eq7_calibration import FEATURES, score_candidates
 from src.eq7_external import compare_shortlists, mouse_prediction_losses, mouse_predictions, panel_cutoffs, summarize_transfer
+from src.eq7_figures import plot_external_comparison
 
 
 def test_external_shortlist_uses_only_the_frozen_internal_gate():
@@ -18,6 +20,27 @@ def test_external_shortlist_uses_only_the_frozen_internal_gate():
     assert list(score_candidates(internal, weights)["v_gene"]) == ["D"]
     assert list(score_candidates(external, weights)["v_gene"]) == ["D"]
     assert score_candidates(external, weights, frozen_cutoffs=panel_cutoffs(internal)).empty
+
+
+def test_transfer_plot_shows_joint_eligibility_and_inclusive_cutoffs():
+    rows = pd.DataFrame({
+        "v_gene": ["A", "B"],
+        "internal_initial_share_pct": [1.25, 2.0], "internal_retention_pct": [96, 92],
+        "external_initial_share_pct": [1.5, 2.4], "external_retention_pct": [95, 97],
+        "passes_internal": [True, False], "passes_external": [True, True],
+    })
+    cutoffs = {"initial_share_pct": 1.25, "retention_pct": 94.5}
+    fig = plot_external_comparison(rows, {"frozen_gate": cutoffs})
+    try:
+        for axis, cutoff in zip(fig.axes, cutoffs.values(), strict=True):
+            assert axis.lines[0].get_xdata() == [cutoff, cutoff]
+            filled, hollow = axis.collections[:2]
+            assert filled.get_offsets().shape[0] == hollow.get_offsets().shape[0] == 1
+            assert len(filled.get_facecolors()) == 1
+            assert len(hollow.get_facecolors()) == 0
+        assert fig.axes[0].collections[0].get_offsets()[0, 0] == 1.25
+    finally:
+        plt.close(fig)
 
 
 def test_union_loss_charges_membership_once_and_handles_zero_scores():

@@ -249,9 +249,9 @@ def plot_results(source, study, *, expected_weights, output=None):
         save_publication_figure(figure, output / f"{chain}_external_mouse_predictions.png")
         plt.close(figure)
     if study == STUDY:
-        compared = pd.read_csv(source / "external_segment_comparison.csv")
+        compared = pd.read_csv(source / "external_segment_comparison.csv", float_precision="round_trip")
         figure = plot_external_comparison(compared, summary)
-        save_publication_figure(figure, output / f"{CHAIN}_external_segment_comparison.png")
+        save_publication_figure(figure, output / f"{CHAIN}_external_segment_comparison.png", pdf=True)
         plt.close(figure)
 
 

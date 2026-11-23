@@ -76,18 +76,24 @@ def snapshot_tables(tables, directory: Path, chain: str, metadata) -> None:
     (folder / f"{chain}_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 
-def load_snapshot_tables(directory: Path, chain: str, metadata=None) -> dict:
+def load_snapshot_tables(directory: Path, chain: str, metadata=None, *, sample_ids=None) -> dict:
     folder = directory / "count_snapshots"
     manifest = json.loads((folder / f"{chain}_manifest.json").read_text())
     if metadata is not None and _metadata_digest(metadata) != manifest["metadata_sha256"]:
         raise ValueError("Sample metadata changed after the spike-in baseline was frozen.")
+    requested = set(sample_ids) if sample_ids is not None else None
     tables = {}
     for filename, expected_digest in manifest["files"].items():
         path = folder / filename
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected_digest:
             raise ValueError(f"Baseline count snapshot changed: {path}")
         group = filename.removeprefix(f"{chain}_").removesuffix(".csv.gz")
-        tables[group] = validate_counts(pd.read_csv(path, index_col=0))
+        if requested is None:
+            frame = pd.read_csv(path, index_col=0)
+        else:
+            frame = pd.read_csv(path, index_col=0, usecols=lambda name: name == "aaV" or name in requested)
+            frame = frame.loc[frame.ne(0).any(axis=1)]
+        tables[group] = validate_counts(frame)
     return tables
 
 

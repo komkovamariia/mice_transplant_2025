@@ -83,7 +83,7 @@ def fit_fisher(counts, sample_metadata, n_workers):
 
 def fit_edger(counts, sample_metadata):
     import rpy2.robjects as ro
-    from rpy2.robjects import pandas2ri
+    from rpy2.robjects import numpy2ri, pandas2ri
 
     edgeR_columns = ["logFC", "logCPM", "F", "PValue", "FDR", "feature_id"]
     edgeR_res_g1 = pd.DataFrame(columns=edgeR_columns)
@@ -102,24 +102,17 @@ def fit_edger(counts, sample_metadata):
             "were required in both contrast groups."
         )
     else:
-        feature_lookup = pd.DataFrame(
-            {
-                "feature_key": [f"feature_{index:07d}" for index in range(len(countData_g1))],
-                "feature_id": list(countData_g1.index),
-            }
-        )
-        countData_g1.index = feature_lookup["feature_key"]
-        with (ro.default_converter + pandas2ri.converter).context():
+        with (ro.default_converter + numpy2ri.converter).context():
             converter = ro.conversion.get_conversion()
-            ro.globalenv["countData"] = converter.py2rpy(countData_g1)
-            ro.globalenv["coldata"] = converter.py2rpy(coldata_g1.reset_index(drop=True))
+            ro.globalenv["countData"] = converter.py2rpy(countData_g1.to_numpy(dtype=np.int32))
+        ro.globalenv["contrast_groups"] = ro.StrVector(coldata_g1["contrast_group"].tolist())
 
         ro.r(
             """
             suppressPackageStartupMessages(library(edgeR))
             countData <- as.matrix(countData)
             storage.mode(countData) <- "integer"
-            group <- factor(coldata$contrast_group, levels=c("allogeneic", "g1"))
+            group <- factor(contrast_groups, levels=c("allogeneic", "g1"))
             design <- model.matrix(~ group)
             y <- DGEList(counts=countData, group=group)
             y <- calcNormFactors(y)
@@ -139,9 +132,9 @@ def fit_edger(counts, sample_metadata):
             converted = ro.conversion.get_conversion().rpy2py(ro.globalenv["edgeR_table"])
         edgeR_res_g1 = pd.DataFrame(converted)
         if not edgeR_res_g1.empty:
-            edgeR_res_g1["feature_key"] = edgeR_res_g1.index.astype(str)
-            edgeR_res_g1 = edgeR_res_g1.merge(feature_lookup, on="feature_key", how="left")
-            edgeR_res_g1 = edgeR_res_g1.drop(columns="feature_key")
+            feature_positions = edgeR_res_g1.index.astype(int) - 1
+            edgeR_res_g1["feature_id"] = countData_g1.index.take(feature_positions).to_numpy()
+            edgeR_res_g1 = edgeR_res_g1.reset_index(drop=True)
             status = "edgeR quasi-likelihood model fitted successfully."
         else:
             edgeR_res_g1 = pd.DataFrame(columns=edgeR_columns)

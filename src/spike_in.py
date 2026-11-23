@@ -39,10 +39,16 @@ def validate_counts(table: pd.DataFrame) -> pd.DataFrame:
     out.index = pd.Index(keys, tupleize_cols=False)
     if not out.index.is_unique or not out.columns.is_unique:
         raise ValueError("Count matrices require unique aaV keys and sample columns.")
-    values = out.to_numpy(dtype=float)
-    if not np.isfinite(values).all() or (values < 0).any() or (values != np.floor(values)).any():
+    if all(pd.api.types.is_integer_dtype(dtype) for dtype in out.dtypes):
+        values = out.to_numpy(copy=False)
+        invalid = (values < 0).any() or (values > np.iinfo(np.int64).max).any()
+    else:
+        values = out.to_numpy(dtype=float)
+        invalid = (not np.isfinite(values).all() or (values < 0).any() or (values != np.floor(values)).any())
+    if invalid:
         raise ValueError("Spike-in requires finite, non-negative integer UMI counts.")
-    out = out.astype(np.int64)
+    if not out.dtypes.eq(np.dtype("int64")).all():
+        out = out.astype(np.int64)
     # exact-set analysis treats any retained row as present
     return out.loc[out.sum(axis=1).gt(0)]
 
@@ -91,8 +97,9 @@ def load_snapshot_tables(directory: Path, chain: str, metadata=None, *, sample_i
         if requested is None:
             frame = pd.read_csv(path, index_col=0)
         else:
-            frame = pd.read_csv(path, index_col=0, usecols=lambda name: name == "aaV" or name in requested)
-            frame = frame.loc[frame.ne(0).any(axis=1)]
+            chunks = pd.read_csv(path, index_col=0, chunksize=50_000,
+                                 usecols=lambda name: name == "aaV" or name in requested)
+            frame = pd.concat([part.loc[part.ne(0).any(axis=1)] for part in chunks])
         tables[group] = validate_counts(frame)
     return tables
 

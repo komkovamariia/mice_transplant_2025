@@ -280,7 +280,7 @@ def error_plot(spleen):
                                 ha="left" if dx > 0 else "right", va="center", fontsize=7.7)
         ax.set(yticks=y, yticklabels=labels, ylim=(len(y)-.42, -.55),
                xlim=(lower, 1.045), title=rf"$\lambda={penalty}$")
-        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.set_xticks([.55, .70, .85, 1.00], ["0.55", "0.70", "0.85", "1.00"])
         tidy(ax, "y")
         tag(ax, letter)
     fig.supxlabel("MAE divided by training-mean MAE", y=.15)

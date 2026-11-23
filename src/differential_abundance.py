@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 import pandas as pd
 from statsmodels.stats.multitest import multipletests
@@ -75,6 +77,34 @@ def fit_fisher(counts, sample_metadata, n_workers):
     return fisher_results
 
 
+@lru_cache(maxsize=1)
+def _edger_test():
+    import rpy2.robjects as ro
+
+    return ro.r(
+        """
+        function(counts, groups) {
+            suppressPackageStartupMessages(library(edgeR))
+            countData <- as.matrix(counts)
+            storage.mode(countData) <- "integer"
+            group <- factor(groups, levels=c("allogeneic", "g1"))
+            design <- model.matrix(~ group)
+            y <- DGEList(counts=countData, group=group)
+            y <- calcNormFactors(y)
+            keep <- filterByExpr(y, design=design)
+            if (!any(keep)) {
+                return(data.frame())
+            }
+            y <- y[keep, , keep.lib.sizes=FALSE]
+            y <- estimateDisp(y, design)
+            fit <- glmQLFit(y, design)
+            test <- glmQLFTest(fit, coef=2)
+            topTags(test, n=Inf)$table
+        }
+        """
+    )
+
+
 def fit_edger(counts, sample_metadata):
     import rpy2.robjects as ro
     from rpy2.robjects import numpy2ri, pandas2ri
@@ -86,7 +116,7 @@ def fit_edger(counts, sample_metadata):
     edgeR_units = sample_metadata.index[
         sample_metadata["contrast_group"].isin(["g1", "allogeneic"])
     ].tolist()
-    countData_g1 = counts[edgeR_units].copy()
+    countData_g1 = counts[edgeR_units]
     coldata_g1 = sample_metadata.loc[edgeR_units, ["contrast_group"]].copy()
     replicate_counts = coldata_g1["contrast_group"].value_counts()
 
@@ -98,32 +128,10 @@ def fit_edger(counts, sample_metadata):
     else:
         with (ro.default_converter + numpy2ri.converter).context():
             converter = ro.conversion.get_conversion()
-            ro.globalenv["countData"] = converter.py2rpy(countData_g1.to_numpy(dtype=np.int32))
-        ro.globalenv["contrast_groups"] = ro.StrVector(coldata_g1["contrast_group"].tolist())
-
-        ro.r(
-            """
-            suppressPackageStartupMessages(library(edgeR))
-            countData <- as.matrix(countData)
-            storage.mode(countData) <- "integer"
-            group <- factor(contrast_groups, levels=c("allogeneic", "g1"))
-            design <- model.matrix(~ group)
-            y <- DGEList(counts=countData, group=group)
-            y <- calcNormFactors(y)
-            keep <- filterByExpr(y, design=design)
-            if (any(keep)) {
-                y <- y[keep, , keep.lib.sizes=FALSE]
-                y <- estimateDisp(y, design)
-                fit <- glmQLFit(y, design)
-                test <- glmQLFTest(fit, coef=2)
-                edgeR_table <- topTags(test, n=Inf)$table
-            } else {
-                edgeR_table <- data.frame()
-            }
-            """
-        )
+            raw_counts = converter.py2rpy(countData_g1.to_numpy(dtype=np.int32))
+        result = _edger_test()(raw_counts, ro.StrVector(coldata_g1["contrast_group"].tolist()))
         with (ro.default_converter + pandas2ri.converter).context():
-            converted = ro.conversion.get_conversion().rpy2py(ro.globalenv["edgeR_table"])
+            converted = ro.conversion.get_conversion().rpy2py(result)
         edgeR_res_g1 = pd.DataFrame(converted)
         if not edgeR_res_g1.empty:
             feature_positions = edgeR_res_g1.index.astype(int) - 1

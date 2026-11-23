@@ -213,7 +213,9 @@ def external_plot(runs, output):
                        color=("#744b85", "#146682", "#be622b")[i], marker=("o", "s", "^")[i], label=mouse)
         ax.set(xticks=np.arange(len(order)), xticklabels=order, ylabel="Joint recovery index",
                title=f"Marrow recipients · {chain}")
-        ax.tick_params(axis="x", labelrotation=45, labelsize=9)
+        ax.tick_params(axis="x", labelsize=8.5)
+        plt.setp(ax.get_xticklabels(), rotation=60 if chain == "TRA" else 45,
+                 horizontalalignment="right", rotation_mode="anchor")
         ax.grid(axis="y", color="#e7e5ec", lw=.7)
         panel_label(ax, letter)
     b.legend(loc="upper right", ncol=3, frameon=False, fontsize=9)

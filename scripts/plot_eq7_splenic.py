@@ -16,7 +16,7 @@ if __package__ in (None, ""):
 from scripts.run_eq7_splenic import MODELS
 from src.eq7_continuous import JOINT_CONTRAST
 
-SUBSETS = {"cd4": "CD4+", "cd8": "CD8+", "pooled": "CD4+ and CD8+"}
+SUBSETS = {"cd4": "CD4+", "cd8": "CD8+", "pooled": "Pooled"}
 COLORS = dict(zip(MODELS, ("#744b85", "#146682", "#118171"), strict=True))
 NAMES = dict(zip(MODELS, ("aaV-indicator ridge", "V-segment-effect ridge", "aaV-fraction ridge"), strict=True))
 RANKERS = {"structural_score": "Structural rank", "continuous_edger": "V-segment edgeR",
@@ -138,7 +138,7 @@ def error_panel(ax, errors):
                     color="white" if dark_cell else INK, fontweight="bold" if winner else "normal")
     ax.set(yticks=np.arange(len(labels)), yticklabels=labels,
            xticks=np.arange(len(MODELS) + 1),
-           xticklabels=["aaV indicator", "V-segment effect", "aaV fraction", "Constant"],
+           xticklabels=["aaV indicator", "V effect", "aaV fraction", "Constant"],
            title="MAE divided by training-mean MAE")
     ax.tick_params(axis="x", labelsize=9)
     ax.tick_params(length=0)
@@ -157,10 +157,10 @@ def eligibility_panel(ax, structure):
                    marker=("o", "s", "D")[i], color=SUBSET_COLORS[subset], label=label, zorder=3)
     ax.axvline(0, color="#797780", ls="--", lw=1.2)
     ax.set(yticks=np.arange(len(HIGHLIGHTS)), yticklabels=HIGHLIGHTS, ylim=(2.46, -.46),
-           xlabel="Relative margin to limiting cutoff (%)", title="TRB structural profile · spleen and thymus")
+           xlabel="Relative margin to limiting cutoff (%)", title="TRB structural profile · both tissues")
     ax.grid(axis="y", color="#e7e5ec", lw=.7)
     ax.legend(loc="upper center", bbox_to_anchor=(.5, -.22), ncol=3, frameon=False, fontsize=9)
-    panel_label(ax, "d")
+    ax.text(-0.10, 1.04, "(d)", transform=ax.transAxes, fontweight="bold", va="bottom")
 
 
 def comparison_plot(runs, output, errors, structure):

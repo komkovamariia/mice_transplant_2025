@@ -20,6 +20,7 @@ dependencies:
   - matplotlib=3.10.1
   - seaborn=0.13.2
   - matplotlib-venn=1.1
+  - pypdf
   - adjusttext=1.3
   - networkx=3.6
   - dill=0.4

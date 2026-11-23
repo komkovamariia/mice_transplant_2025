@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train and evaluate the three joint-recovery regressions by splenic T-cell subset."""
+"""Train and evaluate the three joint-recovery regressions by tissue and T-cell subset."""
 
 import argparse
 import json
@@ -31,23 +31,47 @@ from src.v_thresholds import PlotThresholds
 
 DEPTH = 15_000
 SEED = 1031
+TISSUES = {"spleen": ("spleen",), "thymus": ("thymus",), "combined": ("spleen", "thymus")}
 SUBSETS = {"cd4": ("cd4",), "cd8": ("cd8",), "pooled": ("cd4", "cd8")}
 FRACTION_MODEL = "aaV_fraction_ridge"
 FRACTIONS = ("edgeR_aav_positive_fraction", "fisher_aav_positive_fraction", FEATURES[2])
 MODELS = {BINARY_MODEL: FEATURES, CONTINUOUS_MODEL: CONTINUOUS, FRACTION_MODEL: FRACTIONS}
 
 
-def matched_internal(raw, metadata, subset):
-    """Restrict all three panels of a chain to the same mice and both passing phenotypes."""
-    libraries = pd.concat([table.sum(axis=0) for table in raw.values()]).rename("functional_umi")
-    audit = metadata.merge(libraries, left_on="sample_id", right_index=True, validate="one_to_one")
-    audit = audit.loc[audit["_tissue"].eq("spleen") & audit["_cell_subset"].isin(SUBSETS["pooled"])].copy()
+def paired_library_audit(totals, metadata, subset, tissue):
+    """Use one set of depth-qualified mice across the three phenotype panels."""
+    audit = metadata.merge(totals.rename("functional_umi"), left_on="sample_id",
+                           right_index=True, validate="one_to_one")
+    tissue_names = TISSUES[tissue]
+    audit = audit.loc[audit["_tissue"].isin(tissue_names) & audit["_cell_subset"].isin(SUBSETS["pooled"])].copy()
     passes = audit["functional_umi"].ge(DEPTH)
     mouse_key = ["group_no", "mouse_id"]
-    paired_mice = audit.loc[passes].groupby(mouse_key)["_cell_subset"].nunique().eq(2)
+    passing_cells = audit.loc[passes, [*mouse_key, "_tissue", "_cell_subset"]].drop_duplicates()
+    paired_mice = passing_cells.groupby(mouse_key).size().eq(2 * len(tissue_names))
     audit["paired_mouse"] = pd.MultiIndex.from_frame(audit[mouse_key]).isin(paired_mice[paired_mice].index)
     audit["included"] = audit["paired_mouse"] & passes & audit["_cell_subset"].isin(SUBSETS[subset])
+    return audit
+
+
+def matched_internal(raw, metadata, subset, tissue="spleen"):
+    totals = pd.concat([table.sum(axis=0) for table in raw.values()])
+    audit = paired_library_audit(totals, metadata, subset, tissue)
     return subset_v_tables(raw, audit.loc[audit["included"], "sample_id"]), audit
+
+
+def snapshot_totals(snapshot, chain, sample_ids):
+    """Calculate library totals in bounded batches before loading selected libraries."""
+    directory = snapshot / "count_snapshots"
+    manifest = json.loads((directory / f"{chain}_manifest.json").read_text())
+    sample_ids = set(sample_ids)
+    sums = []
+    for filename in manifest["files"]:
+        frames = pd.read_csv(directory / filename, usecols=lambda name: name in sample_ids, chunksize=25000)
+        total = pd.Series(dtype="int64")
+        for counts in frames:
+            total = total.add(counts.sum(axis=0), fill_value=0)
+        sums.append(total.astype("int64"))
+    return pd.concat(sums)
 
 
 def training_predictors(tables, counts, units, v_counts, v_units, mice):
@@ -84,15 +108,34 @@ def model_specs():
                 yield f"{model}_without_{name}", tuple(term for term in terms if term != omitted), 1.0
 
 
-def train(chain, metadata, raw, tables, output):
-    counts, units = prepare_counts(raw, metadata, pool_within_mouse=True)
-    v_counts, v_units = prepare_v_evidence(raw, metadata)
+def prepare_mouse_evidence(raw, metadata):
+    sample_mice = metadata.set_index("sample_id")["mouse_id"]
+    pooled, representatives = {}, []
+    for group, table in raw.items():
+        by_mouse = sample_mice.loc[table.columns]
+        measurements = {}
+        for _, libraries in by_mouse.groupby(by_mouse):
+            representative = libraries.index[0]
+            measurements[representative] = table.loc[:, libraries.index].sum(axis=1)
+            representatives.append(representative)
+        pooled[group] = pd.DataFrame(measurements, index=table.index)
+    mice_metadata = metadata.loc[metadata["sample_id"].isin(representatives)]
+    return prepare_counts(pooled, mice_metadata, pool_within_mouse=True), prepare_v_evidence(pooled, mice_metadata)
+
+
+def train(chain, metadata, tables, evidence, output):
+    (counts, units), (v_counts, v_units) = evidence
     panel = JointRecoveryPanel(pool_mice(tables, metadata))
     sample_ids = metadata.groupby(["group_no", "mouse_id"])["sample_id"].agg(list)
     all_samples = set(sample_ids.explode())
     partitions = list(product(*(panel.by_group()[group] for group in GROUPS)))
     cached_measurements, fits, ranks, refits = {}, [], [], []
-    for index, triplet in enumerate(partitions, start=1):
+    validate = len(panel.by_group()["g1"]) >= 3
+    if validate:
+        rows = None
+    else:
+        rows = profile_coordinates(training_predictors(tables, counts, units, v_counts, v_units, ()))
+    for index, triplet in enumerate(partitions if validate else (), start=1):
         mice = tuple(panel.mice[i] for i in triplet)
         split = "split_" + "_".join(map(str, triplet))
         omitted = {sample for key in mice for sample in sample_ids.loc[key]}
@@ -118,15 +161,21 @@ def train(chain, metadata, raw, tables, output):
         if index == 1 or index % 5 == 0:
             print(f"{output.name}: {index}/{len(partitions)} triplets", flush=True)
 
-    save(output, "internal", [pd.DataFrame(ranks)], fits, ["chain"])
-    training = pd.concat(refits, ignore_index=True)
+    if validate:
+        save(output, "internal", [pd.DataFrame(ranks)], fits, ["chain"])
+        training = pd.concat(refits, ignore_index=True)
+        rows = profile_coordinates(training_predictors(tables, counts, units, v_counts, v_units, ()))
+    else:
+        outcomes = training_contrasts(panel, (), {}, recovery_column=JOINT_CONTRAST)
+        training = shortlist(rows).merge(outcomes[["v_gene", JOINT_CONTRAST]], on="v_gene", validate="one_to_one")
+        training = training.assign(fit_weight=1 / len(training))
+        training.to_csv(output / "calibration_only.csv", index=False)
     frozen = {(model, penalty): fit_ridge(training, terms, JOINT_CONTRAST, penalty, weight="fit_weight")
               for model, terms, penalty in model_specs() if model in MODELS}
     coefficients = [(model, penalty, term, weight, fit.intercept, fit.baseline)
                     for (model, penalty), fit in frozen.items() for term, weight in fit.coefficients.items()]
     pd.DataFrame(coefficients, columns=["model", "penalty", "term", "weight", "intercept",
                                          "constant_baseline"]).to_csv(output / "frozen_coefficients.csv", index=False)
-    rows = profile_coordinates(training_predictors(tables, counts, units, v_counts, v_units, ()))
     candidates = shortlist(rows)
     rows.assign(selected=rows["v_gene"].isin(candidates["v_gene"])).to_csv(
         output / "full_internal_structure.csv", index=False)
@@ -177,6 +226,7 @@ def main():
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--chain", choices=CHAINS, required=True)
+    parser.add_argument("--tissue", choices=TISSUES, default="spleen")
     parser.add_argument("--subset", choices=SUBSETS, required=True)
     parser.add_argument("--skin", type=Path)
     parser.add_argument("--marrow", type=Path)
@@ -184,22 +234,28 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     meta = pd.read_csv(args.cache / "mouse_metadata.csv", dtype={"mouse_id": str})
-    candidates = meta.loc[meta["chain"].eq(args.chain) & meta["_tissue"].eq("spleen"), "sample_id"]
-    raw = load_snapshot_tables(args.cache / "raw", args.chain, meta, sample_ids=candidates)
-    raw, audit = matched_internal(raw, meta, args.subset)
+    candidates = meta.loc[meta["chain"].eq(args.chain) & meta["_tissue"].isin(TISSUES[args.tissue]), "sample_id"]
+    snapshot = args.cache / "raw"
+    totals = snapshot_totals(snapshot, args.chain, candidates)
+    audit = paired_library_audit(totals, meta, args.subset, args.tissue)
+    selected_ids = audit.loc[audit["included"], "sample_id"]
+    raw = load_snapshot_tables(snapshot, args.chain, meta, sample_ids=selected_ids)
     args.output.mkdir(parents=True, exist_ok=True)
     audit.to_csv(args.output / "internal_libraries.csv", index=False)
     tables, _ = downsample_group_tables(raw, depth=DEPTH, seed=SEED)
-    panel, frozen, candidates = train(args.chain, meta, raw, tables, args.output)
+    evidence = prepare_mouse_evidence(raw, meta)
+    del raw
+    panel, frozen, candidates = train(args.chain, meta, tables, evidence, args.output)
     for study, reports, compatible, qc_subdir in (
         ("PRJNA954716", args.skin, (args.chain, args.subset) == ("TRB", "cd4"), Path()),
         ("PRJNA650133", args.marrow, args.subset == "pooled", Path(args.chain)),
     ):
-        if reports and compatible:
+        if reports and compatible and args.tissue == "spleen":
             expected = (args.article_inputs / study / "validation" / qc_subdir / "external_library_qc.csv"
                         if args.article_inputs else None)
             external_test(root, args.chain, study, reports, expected, panel, frozen, candidates, args.output)
-    run = {"chain": args.chain, "subset": args.subset, "tissue": "spleen", "depth": DEPTH,
+    run = {"chain": args.chain, "subset": args.subset, "tissue": args.tissue, "depth": DEPTH,
+           "validation": "nested_mouse_holdout" if len(panel.by_group()["g1"]) >= 3 else "calibration_only",
            "seed": SEED, "penalties": PENALTIES, "mice": {g: len(i) for g, i in panel.by_group().items()}}
     (args.output / "run.json").write_text(json.dumps(run, indent=2) + "\n")
 

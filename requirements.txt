@@ -30,3 +30,4 @@ ipykernel>=6.29,<7
 pytest>=8.3,<9
 rpy2==3.6.7
 repseq @ git+https://github.com/mmjmike/repseq.git@1c464120ac0675608178608af531f90fcba17deb
+pypdf

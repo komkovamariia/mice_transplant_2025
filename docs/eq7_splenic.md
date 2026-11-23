@@ -49,3 +49,36 @@ rankings, error summaries at both penalties and frozen coefficients. The
 manuscript reports the primary penalty of 1 in the figures and both 1 and 10 in
 the error table. The original whole-tissue structural and selection benchmark
 remains documented separately.
+
+## Tissue panels and manuscript figures
+
+Pass `--tissue thymus` or `--tissue combined` to run the same configuration on
+thymic libraries or on spleen and thymus together. The combined panel requires
+an eligible CD4+ and CD8+ library in each tissue for a mouse to enter that
+panel. All eligible native and donor thymus libraries are included in the
+thymus stratum as annotated in the input metadata. Counts from one mouse
+are pooled before the abundance test. Mouse IDs are held out across all
+libraries from that animal.
+
+When a stratum has only two eligible intact mice, full-cohort abundance
+predictors are fitted to recovery contrasts obtained from triplet omissions.
+This yields calibration coefficients. There is no outer nested MAE for these
+strata, because an outer fold would leave a single intact mouse and a further
+intact-mouse omission would exhaust its reference. Their `run.json` records
+`calibration_only` and the inputs to the final fit are written to
+`calibration_only.csv`. Only splenic configurations are eligible for external
+comparisons.
+
+Recompute the spleen-only descriptive analyses and draw the article panels
+using the new figure scripts. The same `input_cache` as above supplies the
+raw MiXCR-derived count snapshots and metadata. Render with the Palatino
+(P052) font available to Matplotlib.
+
+```bash
+for chain in TRA TRB; do
+  python scripts/run_splenic_figures.py \
+    --cache "$input_cache" --chain "$chain" --output "$figure_data/$chain"
+done
+python scripts/plot_splenic_manuscript.py \
+  --data "$figure_data" --spleen-models "$run_dir" --output "$figure_dir"
+```

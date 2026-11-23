@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.stats.multitest import multipletests
 
-from .count_statistics import pooled_fisher_rows
+from .count_statistics import pooled_fisher_arrays
 from .spike_in import aa_v_key, combine_count_tables
 
 
@@ -57,21 +57,15 @@ def fit_fisher(counts, sample_metadata, n_workers):
 
     g1_counts = counts[fisher_samples_g1].sum(axis=1).astype(float)
     control_counts = counts[fisher_samples_ctrl].sum(axis=1).astype(float)
-    fisher_rows = pooled_fisher_rows(
-        counts.index, g1_counts, control_counts, n_jobs=n_workers
-    )
-
-    fisher_results = pd.DataFrame(
-        fisher_rows,
-        columns=[
-            "feature_id",
-            "fisher_g1_count",
-            "fisher_allogeneic_count",
-            "Fisher_log2FC_g1",
-            "Fisher_odds_ratio",
-            "Fisher_p_g1",
-        ],
-    )
+    odds, probabilities = pooled_fisher_arrays(g1_counts.to_numpy(), control_counts.to_numpy())
+    fisher_results = pd.DataFrame({
+        "feature_id": counts.index.to_numpy(),
+        "fisher_g1_count": g1_counts.to_numpy(),
+        "fisher_allogeneic_count": control_counts.to_numpy(),
+        "Fisher_log2FC_g1": np.log2((g1_counts.to_numpy() + 1) / (control_counts.to_numpy() + 1)),
+        "Fisher_odds_ratio": odds,
+        "Fisher_p_g1": probabilities,
+    })
     if len(fisher_results):
         fisher_results["Fisher_FDR_g1"] = multipletests(
             fisher_results["Fisher_p_g1"], method="fdr_bh"

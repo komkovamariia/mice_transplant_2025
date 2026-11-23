@@ -155,6 +155,12 @@ def eligibility_panel(ax, structure):
                                     genes["retention_pct"] / genes["retention_cutoff_pct"]) - 1)
         ax.scatter(margin, np.arange(len(HIGHLIGHTS)) + (i - 1) * .18, s=37,
                    marker=("o", "s", "D")[i], color=SUBSET_COLORS[subset], label=label, zorder=3)
+        if subset == "cd4":
+            segment = genes.loc["TRBV14"]
+            detail = f"{segment['retention_pct']:.2f}% vs {segment['retention_cutoff_pct']:.2f}% retention"
+            ax.annotate(detail, (margin["TRBV14"], .82), xytext=(.16, .58), textcoords="axes fraction",
+                        fontsize=9, color=SUBSET_COLORS[subset],
+                        arrowprops={"arrowstyle": "-", "color": "#aba5b3", "linewidth": .8})
     ax.axvline(0, color="#797780", ls="--", lw=1.2)
     ax.set(yticks=np.arange(len(HIGHLIGHTS)), yticklabels=HIGHLIGHTS, ylim=(2.46, -.46),
            xlabel="Relative margin to limiting cutoff (%)", title="TRB structural profile · both tissues")

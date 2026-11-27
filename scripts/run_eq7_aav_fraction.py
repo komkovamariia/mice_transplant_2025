@@ -37,7 +37,12 @@ ABLATIONS = {
     "aav_fraction_without_Fisher": (FRACTION[0], FRACTION[2]),
     "aav_fraction_without_structure": FRACTION[:2],
 }
-MODELS = {FRACTION_MODEL: FRACTION, **ABLATIONS}
+SINGLE_PREDICTOR_MODELS = {
+    "structure_only": (FRACTION[2],),
+    "edgeR_only_binary": (FEATURES[0],),
+    "edgeR_only_fraction": (FRACTION[0],),
+}
+MODELS = {FRACTION_MODEL: FRACTION, **ABLATIONS, **SINGLE_PREDICTOR_MODELS}
 RANKERS = {
     "structural_score": "n_g1_exclusive_aav",
     "aav_edgeR_positive_fraction": FRACTION[0],
@@ -117,7 +122,8 @@ def evaluate(chain, panel, folds, effects):
         )
         order = {name: eligible[column].to_numpy(dtype=float) for name, column in RANKERS.items()}
         for model, features in MODELS.items():
-            for penalty in PENALTIES if model == FRACTION_MODEL else (1.0,):
+            penalties = PENALTIES if model == FRACTION_MODEL or model in SINGLE_PREDICTOR_MODELS else (1.0,)
+            for penalty in penalties:
                 fit = fit_ridge(training, features, JOINT_CONTRAST, penalty)
                 pred = fit.predict(eligible)
                 predictions.append(pd.DataFrame({

@@ -67,8 +67,7 @@ def fit_fisher(counts, sample_metadata, n_workers):
             "feature_id",
             "fisher_g1_count",
             "fisher_allogeneic_count",
-            "Fisher_log2FC_g1",
-            "Fisher_odds_ratio",
+            "Fisher_log2OR_g1",
             "Fisher_p_g1",
         ],
     )
@@ -194,13 +193,13 @@ def rank_v_segments(remaining, edger, fisher_results, stratum, stratum_label):
             .groupby("v_gene", as_index=False)
             .agg(
                 n_fisher_significant=("feature_id", "count"),
-                mean_fisher_log2fc=("Fisher_log2FC_g1", "mean"),
+                mean_fisher_log2or=("Fisher_log2OR_g1", "mean"),
             )
         )
         fisher_v = fisher_v.merge(fisher_significant, on="v_gene", how="left")
     else:
         fisher_v = pd.DataFrame(
-            columns=["v_gene", "n_fisher_significant", "mean_fisher_log2fc", "min_fisher_fdr"]
+            columns=["v_gene", "n_fisher_significant", "mean_fisher_log2or", "min_fisher_fdr"]
         )
 
     ranking = exclusive_v.merge(edger_v, on="v_gene", how="outer").merge(
@@ -218,7 +217,7 @@ def rank_v_segments(remaining, edger, fisher_results, stratum, stratum_label):
     )
     ranking["fisher_g1_enriched"] = (
         ranking["n_fisher_significant"].gt(0)
-        & ranking["mean_fisher_log2fc"].gt(0)
+        & ranking["mean_fisher_log2or"].gt(0)
     )
     ranking["evidence_class"] = np.select(
         [
@@ -235,16 +234,11 @@ def rank_v_segments(remaining, edger, fisher_results, stratum, stratum_label):
         ],
         default="tested without positive enrichment evidence",
     )
-    ranking["evidence_score"] = (
-        4 * ranking["edgeR_g1_enriched"].astype(int)
-        + 2 * ranking["fisher_g1_enriched"].astype(int)
-        + np.log1p(ranking["n_g1_exclusive_aav"])
-    )
     ranking["stratum"] = stratum
     ranking["stratum_label"] = stratum_label
     ranking = ranking.sort_values(
-        ["evidence_score", "n_edger_significant", "n_g1_exclusive_aav", "v_gene"],
-        ascending=[False, False, False, True],
+        ["n_g1_exclusive_aav", "v_gene"],
+        ascending=[False, True],
     ).reset_index(drop=True)
     ranking["stratum_rank"] = np.arange(1, len(ranking) + 1)
     return ranking

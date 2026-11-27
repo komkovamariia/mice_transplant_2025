@@ -18,6 +18,8 @@ if __package__ in (None, ""):
 from scripts.run_eq7_external import external_raw
 from scripts.run_v_updates import calibration_dir, evidence_dir
 from src.eq7_calibration import FEATURES
+from src.differential_abundance import fit_fisher, prepare_counts
+from src.spike_in import aa_v_key
 from src.eq7_weighted import (
     COUNT_CONTRAST, GROUPS, MOLECULE_CONTRAST, RecoveryPanel, contrasts,
     fit_ridge, full_training_profiles, pool_mice, split_shortlist, top_weights,
@@ -29,7 +31,7 @@ from src.structural_v import subset_v_tables
 
 
 CHAINS = ("TRA", "TRB")
-ORDERS = {"TRA": (5, 10), "TRB": (1, 2)}
+ORDERS = {"TRA": (5, 10), "TRB": (2, 4)}
 PENALTIES = (1.0, 10.0)
 MOLECULE_MODEL = "weighted_contrast_ridge"
 COUNT_MODEL = "count_contrast_ridge"
@@ -55,10 +57,9 @@ def load_inputs(root, cache, chain, metadata, *, panel_type=RecoveryPanel):
         expected_calibration, cache / "calibration" / chain, f"count_snapshots/{chain}_manifest.json",
     )
     tables = load_snapshot_tables(calibration, chain, metadata)
-    expected_evidence = evidence_dir(root, cache, chain) if calibration == expected_calibration else None
-    evidence = fold_path(
-        expected_evidence, cache / "eq7_evidence" / chain, "stratified_fold_evidence.csv",
-    )
+    evidence = evidence_dir(root, cache, chain, calibration=calibration)
+    if not (evidence / "stratified_fold_evidence.csv").is_file():
+        raise ValueError("Regenerate odds-ratio fold evidence with run_v_updates.py evidence or refresh_fisher_evidence.py; old effect caches are incompatible.")
     rows = pd.read_csv(
         evidence / "stratified_fold_evidence.csv", dtype={"heldout_mouse": str},
     )
@@ -185,6 +186,16 @@ def external_validation(root, cache, chain, metadata, args, fit, *,
                 measured[idx, 0], (100 if group == "g1" else -100) * recorded.reindex(candidates["v_gene"]),
                 atol=1e-12,
             )
+        counts, units = prepare_counts(
+            {g: train_tables[g] if g in train_tables else train_tables["g1"].iloc[:, :0]
+             for g in ("g1", "g2", "g5", "g6")}, matched, pool_within_mouse=True,
+        )
+        counts = counts.loc[counts.sum(axis=1).gt(0)]
+        fisher = fit_fisher(counts, units, n_workers=1)
+        significant = fisher.loc[fisher["Fisher_FDR_g1"].lt(0.05)].copy()
+        significant["v_gene"] = significant["feature_id"].map(lambda key: aa_v_key(key)[1])
+        mean_effect = significant.groupby("v_gene")["Fisher_log2OR_g1"].mean()
+        candidates[FEATURES[1]] = candidates["v_gene"].map(mean_effect).fillna(0).gt(0).astype(int)
         if augment is not None:
             candidates = augment(candidates, train_tables, matched)
         ranks = {name: candidates[term].to_numpy() for name, term in rankers.items()}

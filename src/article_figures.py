@@ -32,6 +32,7 @@ ARTICLE_FIGURES = {
     "localization": "v_segment_localization",
     "edger": "edger_summary",
     "fisher": "fisher_edger_concordance",
+    "fisher_v": "fisher_v_mean_log2or",
     "spike_in": "spike_in_sensitivity",
     "cd4_cd8": "cd4_cd8_structure",
 }
@@ -347,14 +348,33 @@ def plot_edger(ranking, chain, suffix=""):
     return fig
 
 
+def plot_fisher_v(ranking, chain, suffix=""):
+    """Summarize signed odds ratios among significant aaV by V segment."""
+    effect = "mean_fisher_log2or"
+    tested = ranking.loc[ranking["n_fisher_significant"].gt(0)]
+    positive = tested.loc[tested[effect].gt(0)].nlargest(8, effect)
+    negative = tested.loc[tested[effect].lt(0)].nsmallest(8, effect)
+    rows = pd.concat([positive, negative]).sort_values(effect)
+    fig, ax = plt.subplots(figsize=(6.7, max(2.9, .23 * len(rows) + 1.1)), layout="constrained")
+    if rows.empty:
+        empty_axis(ax, "No nonzero mean Fisher effects.")
+        return fig
+    ax.barh(rows["v_gene"], rows[effect], color=np.where(rows[effect].gt(0), CORAL, PURPLE), height=.67)
+    ax.axvline(0, color="black", linewidth=.7)
+    _grid(ax, "x")
+    ax.set_title(f"{chain}: pooled Fisher effects for g1 versus g5+g6{suffix}")
+    ax.set_xlabel("Mean log₂ odds ratio among FDR-significant aaV")
+    return fig
+
+
 def plot_fisher(comparison, chain, suffix=""):
     fig = article_canvas("fisher")
     ax = fig.add_axes((0.107, 0.100, 0.878, 0.826))
     _ticks(ax, 10)
     _title(ax, f"{chain} g1: Fisher and edgeR effect concordance{suffix}", size=14, pad=10)
-    ax.set_xlabel("Fisher pooled-count log₂ ratio: g1 relative to g5+g6", fontsize=11)
+    ax.set_xlabel("Fisher pooled-count log₂ odds ratio: g1 relative to g5+g6", fontsize=11)
     ax.set_ylabel("edgeR log₂ fold change: g1 relative to g5+g6", fontsize=11)
-    columns = ["Fisher_log2FC_g1", "logFC"]
+    columns = ["Fisher_log2OR_g1", "logFC"]
     rows = comparison[columns].replace([np.inf, -np.inf], np.nan).dropna()
     if rows.empty:
         empty_axis(ax, "No aaV clonotype was jointly available from Fisher and edgeR.")
@@ -399,7 +419,7 @@ def plot_spike_in(frame, chain):
         ("recovery_fraction", "Exact aaV recovery", "Recovered aaV fraction"),
         ("edger_positive_recovery_fraction", "edgeR recovery", "Significant aaV fraction"),
         ("v_umi_share_g1", f"{gene} UMI share", "UMI share in g1 (%)"),
-        ("v_final_rank", "Integrated V-segment rank", "Integrated rank"),
+        ("v_final_rank", "Structural V-segment rank", "Structural rank"),
     )
     arrow = {"arrowstyle": "-", "color": "black", "lw": 0.85}
     for i, (column, title, ylabel) in enumerate(panels):

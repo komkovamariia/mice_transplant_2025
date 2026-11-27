@@ -9,7 +9,7 @@ mouse-level index is the geometric mean of two quantities:
   its prevalence in the retained g1 reference mice.
 
 The two fits keep the same adaptive shortlist and log residual count.
-The binary model uses the original aaV-level edgeR and Fisher flags.
+The binary model uses aaV-level edgeR log2 fold changes and Fisher log2 odds ratios, summarized over FDR-significant aaV.
 The continuous model derives V-usage log2 fold change from mouse-level
 edgeR and a log2 odds ratio from pooled-count Fisher with a 0.5 correction.
 Each signed effect is multiplied by one minus its BH FDR. Clonotype
@@ -26,9 +26,9 @@ The previously run model and its output directories remain available.
 ```bash
 conda activate mice-transplant-2025
 cd ~/mice_transplant_env_test/mice_transplant_2025
-git fetch origin eq7-continuous-recovery
-git checkout --detach FETCH_HEAD
+git pull --ff-only origin main
 bench="$HOME/projects/mice_transplant_2025/mice_transplant_git/results/eq7_benchmark_1249"
+python scripts/refresh_fisher_evidence.py --cache "$bench/_inputs"
 python scripts/run_eq7_continuous.py --cache "$bench/_inputs" \
   --output results/eq7_continuous_1249
 python scripts/plot_eq7_continuous.py --results results/eq7_continuous_1249 \
@@ -56,3 +56,16 @@ spleen shortlists and model parameters are fixed from internal data. V
 counts are normalized by the sequencing totals of each mouse. External
 counts are productive read fragments. PRJNA650133 has only the graft
 arm, so it yields descriptive recovery without a contrast error.
+
+
+The separate selection benchmark compares seven equal-size selection rules
+on single-mouse omissions. Use the refreshed odds-ratio evidence:
+
+```bash
+python scripts/run_selection_benchmark.py --cache "$bench/_inputs" \
+  --output results/selection_benchmark_odds
+```
+
+Its endpoint is the unique-aaV reference-match contrast. The joint recovery
+regression uses a common adaptive shortlist and separately evaluates MAE
+and top-5/top-10 TRA or top-2/top-4 TRB recovery.

@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.count_statistics import historical_fisher_log2_ratio
+from src.count_statistics import fisher_log2_odds_ratio
 from src.first_pass_input import count_table_to_repertoire, prepare_sample_index
 
 
@@ -96,5 +96,24 @@ def test_count_table_conversion_keeps_positive_functional_trav_rows(tmp_path):
     assert repertoire["ckey"].str.startswith("TRA|").all()
 
 
-def test_fisher_effect_reproduces_historical_pooled_count_ratio():
-    assert historical_fisher_log2_ratio(7, 3) == pytest.approx(1.0)
+def test_fisher_effect_uses_relative_abundance():
+    assert fisher_log2_odds_ratio(100, 200, 10_000, 40_000) > 0
+    assert fisher_log2_odds_ratio(1, 9, 100, 100) < 0
+    assert fisher_log2_odds_ratio(0, 0, 100, 200) == 0
+    assert fisher_log2_odds_ratio(7, 3, 10, 10) == pytest.approx(
+        2 * __import__("math").log2(7.5 / 3.5)
+    )
+
+
+
+def test_fisher_p_value_uses_uncorrected_counts():
+    from scipy.stats import fisher_exact
+    from src.count_statistics import pooled_fisher_rows
+
+    g1 = pd.Series([100, 9900])
+    graft = pd.Series([200, 39800])
+    rows = pooled_fisher_rows(["a", "b"], g1, graft, n_jobs=1)
+    assert rows[0]["Fisher_log2OR_g1"] > 0
+    assert rows[0]["Fisher_p_g1"] == pytest.approx(
+        fisher_exact([[100, 200], [9900, 39800]])[1]
+    )

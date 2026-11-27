@@ -49,11 +49,9 @@ def continuous_evidence(counts, units, excluded=()):
     if status != EDGER_SUCCESS:
         raise ValueError(status)
     fisher = fit_fisher(train, train_units, n_workers=1)
-    a, b = fisher["fisher_g1_count"], fisher["fisher_allogeneic_count"]
-    odds = np.log2(((a + 0.5) / (a.sum() - a + 0.5)) / ((b + 0.5) / (b.sum() - b + 0.5)))
     weights = pd.DataFrame({
         CONTINUOUS[0]: (edge["logFC"] * (1 - edge["FDR"])).set_axis(edge["feature_id"]),
-        CONTINUOUS[1]: (odds * (1 - fisher["Fisher_FDR_g1"])).set_axis(fisher["feature_id"]),
+        CONTINUOUS[1]: (fisher["Fisher_log2OR_g1"] * (1 - fisher["Fisher_FDR_g1"])).set_axis(fisher["feature_id"]),
     }).reindex(train.index).fillna(0)
     weights.index = weights.index.map(lambda key: aa_v_key(key)[1])
     return weights.rename_axis("v_gene").reset_index()

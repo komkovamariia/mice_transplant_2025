@@ -5,18 +5,19 @@ from __future__ import annotations
 import math
 
 
-def historical_fisher_log2_ratio(
-    g1_count: float,
-    allogeneic_count: float,
-) -> float:
-    """Return the pooled-count log2 ratio with the historical pseudocount."""
-    if g1_count < 0 or allogeneic_count < 0:
-        raise ValueError("Fisher pooled counts must be non-negative.")
-    return math.log2((float(g1_count) + 1.0) / (float(allogeneic_count) + 1.0))
+def fisher_log2_odds_ratio(g1_count, control_count, total_g1, total_control):
+    """Signed Fisher effect; add 0.5 to all four cells for finite odds."""
+    if not (0 <= g1_count <= total_g1 and 0 <= control_count <= total_control):
+        raise ValueError("Counts must be non-negative and within group totals.")
+    if g1_count == control_count == 0:
+        return 0.0
+    return math.log2(
+        (g1_count + 0.5) * (total_control - control_count + 0.5)
+        / ((control_count + 0.5) * (total_g1 - g1_count + 0.5))
+    )
 
 
 def _fisher_batch(task):
-    import numpy as np
     from scipy.stats import fisher_exact
 
     rows, total_g1, total_control = task
@@ -26,16 +27,15 @@ def _fisher_batch(task):
             [g1_count, control_count],
             [max(total_g1 - g1_count, 0), max(total_control - control_count, 0)],
         ]
-        odds_ratio, p_value = fisher_exact(table, alternative="two-sided")
+        _, p_value = fisher_exact(table, alternative="two-sided")
         results.append(
             {
                 "feature_id": feature_id,
                 "fisher_g1_count": g1_count,
                 "fisher_allogeneic_count": control_count,
-                "Fisher_log2FC_g1": np.log2(
-                    (g1_count + 1) / (control_count + 1)
+                "Fisher_log2OR_g1": fisher_log2_odds_ratio(
+                    g1_count, control_count, total_g1, total_control,
                 ),
-                "Fisher_odds_ratio": odds_ratio,
                 "Fisher_p_g1": p_value,
             }
         )

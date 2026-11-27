@@ -188,6 +188,7 @@ def main():
         ]).to_csv(args.output / "frozen_coefficients.csv", index=False)
         (args.output / "run.json").write_text(json.dumps({
             **provenance, "device": args.device, "fixed_penalties": PENALTIES,
+            "fisher_effect": "log2_odds_ratio_0.5", "top_k": ORDERS,
             "external_skin": args.skin is not None, "external_marrow": args.marrow is not None,
         }, indent=2) + "\n")
 

@@ -218,13 +218,13 @@ def calibration_input_sha256(cache, chain):
     return digest.hexdigest()
 
 
-def evidence_dir(root, cache, chain):
+def evidence_dir(root, cache, chain, *, calibration=None):
     from src.eq7_calibration import attach_mouse_response, training_evidence, with_structural_fields
     from src.structural_v import structural_remainder, subset_v_tables, v_region_proportions
 
     files = [
         cache / "raw" / "count_snapshots" / f"{chain}_manifest.json",
-        calibration_dir(root, cache, chain) / "count_snapshots" / f"{chain}_manifest.json",
+        (calibration or calibration_dir(root, cache, chain)) / "count_snapshots" / f"{chain}_manifest.json",
         root / "src" / "differential_abundance.py",
         root / "src" / "count_statistics.py",
     ]

@@ -55,7 +55,7 @@ def test_omitted_mouse_counts_cannot_affect_fold_fractions(monkeypatch):
         return pd.DataFrame({
             "feature_id": list(KEYS),
             "Fisher_FDR_g1": [0.01, 0.01, 0.5],
-            "Fisher_log2FC_g1": [1.0, -2.0, 1.0],
+            "Fisher_log2OR_g1": [1.0, -2.0, 1.0],
         })
 
     monkeypatch.setattr(eq7_aav_fraction, "fit_edger", fake_edger)

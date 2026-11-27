@@ -53,6 +53,8 @@ def main():
         data = json.loads(path.read_text())
         if tuple(data[k] for k in keys) != (1249, 1031, 15000):
             parser.error(f"Unexpected input seeds or depth in {path}.")
+    if data.get("fisher_effect") != "log2_odds_ratio_0.5":
+        parser.error("Refit the aaV-fraction model using Fisher log2 odds ratio first.")
     args.outcome = JOINT_CONTRAST
     root = Path(__file__).resolve().parents[1]
     metadata = pd.read_csv(args.cache / "mouse_metadata.csv", dtype={"sample_id": str, "mouse_id": str})

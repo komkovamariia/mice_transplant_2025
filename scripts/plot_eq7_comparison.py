@@ -28,7 +28,6 @@ SELECTION = {
     "initial_share_ungated": "Initial share",
     "edgeR_binary_ungated": "Binary aaV edgeR",
     "Fisher_binary_ungated": "Binary aaV Fisher",
-    "old_E_heuristic_ungated": "Historical heuristic",
     "V_usage_edgeR_logFC": "V-usage edgeR effect",
     "V_usage_edgeR_significant": "V-usage edgeR with FDR",
 }
@@ -57,16 +56,16 @@ def selection_figure(benchmark, usage):
     for ax, chain in zip(axes, ("TRA", "TRB"), strict=True):
         values = 100 * summary.loc[summary["chain"].eq(chain)].set_index("method").loc[list(order), "g1_minus_mean_g5g6"]
         for idx, (method, value) in enumerate(values.items()):
-            color = ORANGE if method == "structural_screen" else PURPLE
+            color = ORANGE if method in {"structural_screen", "S_ungated"} else ("#737373" if method == "initial_share_ungated" else PURPLE)
             ax.hlines(idx, 0, value, color=color, lw=1, alpha=0.42)
             ax.scatter(value, idx, color=color, s=30, zorder=3)
             ax.annotate(f"{value:.2f}", (value, idx), xytext=(4 if value >= 0 else -4, 0),
                         textcoords="offset points", ha="left" if value >= 0 else "right", va="center")
         ax.set(xlabel=f"{chain} contrast (percentage points)", yticks=y, yticklabels=list(order.values()))
         if values.min() >= 0:
-            ax.set_xlim(0, 11.3)
+            ax.set_xlim(0, max(1, values.max() * 1.24))
         else:
-            ax.set_xlim(-1.85, 0)
+            ax.set_xlim(min(-0.1, values.min() * 1.35), max(0, values.max() * 1.25))
         if values.max() < 0:
             ax.spines["left"].set_visible(False)
         ax.xaxis.set_major_locator(MaxNLocator(5))

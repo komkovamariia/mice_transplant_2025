@@ -84,22 +84,15 @@ The combined analysis fits Fisher and edgeR separately for TRA and TRB.
 Fisher testing compares pooled g1 with pooled g5+g6 counts. The displayed effect size is:
 
 ```text
-log2((g1_count + 1) / (g5_count + g6_count + 1))
+log2(((g1_count + 0.5) / (total_g1 - g1_count + 0.5)) /
+     ((g5g6_count + 0.5) / (total_g5g6 - g5g6_count + 0.5)))
 ```
 
-Benjamini-Hochberg correction is applied across the tested aaV clonotypes.
+The 0.5 correction applies only to the effect estimate; Fisher p-values use the original contingency table. An aaV absent from both contrasted arms has no directional effect and is assigned zero. Benjamini-Hochberg correction is applied across the tested aaV clonotypes.
 
 edgeR uses mouse-level analysis units with group levels `allogeneic` and `g1`. Positive logFC indicates higher abundance in g1. Negative logFC indicates higher abundance in the pooled g5+g6 reference. The model sequence is `DGEList`, `calcNormFactors`, `filterByExpr`, `estimateDisp`, `glmQLFit` and `glmQLFTest`. At least two analysis units are required in each contrast group. The figure shows up to eight V segments per direction of the mean significant-aaV effect. The support panel counts significant aaV in both directions.
 
-The compatibility columns `evidence_score` and `stratum_rank` in the baseline V-ranking tables retain the original descriptive ranking:
-
-```text
-4 * edgeR_g1_enriched
-+ 2 * fisher_g1_enriched
-+ log1p(n_g1_exclusive_aav)
-```
-
-Ties use significant-aaV counts, exclusive-aaV counts and V name.
+The baseline V-segment rank uses the number of distinct aaV remaining after structural subtraction; ties use V name. Binary edgeR and Fisher evidence is retained in separate columns.
 The calibrated analysis uses the edgeR and Fisher indicators from these tables.
 It derives the structural count and cutoffs from the current rarefied tables.
 It writes the learned rank by `E` to `{tra,trb}_scored_top_v.csv`.

@@ -61,7 +61,7 @@ def cache_signature(cache, chain, root):
         digest.update((root / relative).read_bytes())
     from rpy2.robjects import r
     digest.update(str(r('as.character(packageVersion("edgeR"))')[0]).encode())
-    digest.update(b"g1-vs-g5g6;BH<0.05;logFC>0;denominator=tested;aaV")
+    digest.update(b"g1-vs-g5g6;BH<0.05;edgeR_logFC_or_Fisher_log2OR>0;denominator=tested;aaV")
     return digest.hexdigest()
 
 
@@ -212,13 +212,16 @@ def main():
     predictions = pd.concat(all_predictions, ignore_index=True)
     if args.reference_results:
         src = args.reference_results
+        previous_run = json.loads((src / "run.json").read_text())
+        if previous_run.get("fisher_effect") != "log2_odds_ratio_0.5" or previous_run.get("top_k") != {k: list(v) for k, v in ORDERS.items()}:
+            raise ValueError("Reference results must use odds ratios and the current top-k values.")
         old_predictions = pd.read_csv(src / "internal_predictions.csv")
         old_ranks = pd.read_csv(src / "internal_ranking_by_mouse_split.csv")
         check_reference(predictions, old_predictions)
         old_predictions = old_predictions.loc[old_predictions["model"].isin(
             (BINARY_MODEL, CONTINUOUS_MODEL)
         )]
-        old_ranks = old_ranks.loc[old_ranks["model"].isin((BINARY_MODEL, CONTINUOUS_MODEL))]
+        old_ranks = old_ranks.loc[old_ranks["model"].isin((BINARY_MODEL, CONTINUOUS_MODEL, "continuous_edger", "continuous_fisher"))]
         predictions = pd.concat([predictions, old_predictions], ignore_index=True)
         ranks = pd.concat([ranks, old_ranks], ignore_index=True)
     ranks.to_csv(args.output / "internal_ranking_by_mouse_split.csv", index=False)
@@ -237,9 +240,11 @@ def main():
         "structural_seed": 1249, "calibration_seed": 1031, "depth": 15000,
         "n_triplets_per_chain": 75, "penalties": list(PENALTIES),
         "workers": args.workers, "new_rarefaction": False,
-        "reuse_original_evidence": True, "reference_results": str(args.reference_results),
+        "reuse_original_evidence": True,
+        "fisher_effect": "log2_odds_ratio_0.5",
+        "top_k": ORDERS, "reference_results": str(args.reference_results),
         "fraction_denominator": "tested_aaV_per_method_within_V",
-        "positive_significance": "BH_FDR<0.05 and signed_log2FC>0",
+        "positive_significance": "BH_FDR<0.05 and signed effect>0 (edgeR log2FC or Fisher log2OR)",
     }, indent=2) + "\n")
     print(f"Done. New and comparison tables: {args.output}", flush=True)
 

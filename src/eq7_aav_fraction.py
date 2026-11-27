@@ -63,7 +63,7 @@ def fraction_evidence(counts, units, excluded=(), *, workers=4):
         edge, "FDR", "logFC", genes,
     )
     fisher_frac, fisher_pos, fisher_tested = summarize_positive_fraction(
-        fisher, "Fisher_FDR_g1", "Fisher_log2FC_g1", genes,
+        fisher, "Fisher_FDR_g1", "Fisher_log2OR_g1", genes,
     )
     return pd.DataFrame({
         "v_gene": genes,

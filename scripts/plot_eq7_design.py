@@ -4,7 +4,9 @@
 import argparse
 from pathlib import Path
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, Rectangle
+from matplotlib.patches import Circle, Rectangle, PathPatch
+from matplotlib.path import Path as MplPath
+import numpy as np
 
 purple = "#854696"
 peach = "#f6a084"
@@ -48,7 +50,7 @@ def draw_schemes(output):
     ax.text(3.75,1.88,'Outer reference: 2 g1 mice (prevalence = 0.5 or 1)',ha='center',fontsize=9)
     ax.plot([.1,7.4],[1.72,1.72],color='#b9b9b9',lw=.6)
     ax.text(.12,1.52,'(b)  Fit ridge models using inner responses; score outer mice',weight='bold',fontsize=10.4)
-    ax.text(3.75,1.28,'One fixed outer predictor vector per V; aggregate 32 inner responses  •  λ = 1 (sensitivity: 10)',ha='center',fontsize=8.8)
+    ax.text(3.75,1.28,'One fixed outer predictor vector per V; aggregate 32 inner responses; λ = 1 (sensitivity: 10)',ha='center',fontsize=8.8)
     for x,label,fill in zip((.1,2.58,5.06),('aaV-indicator ridge','V-segment-effect ridge','aaV-fraction ridge'),(violet_bg,peach_bg,mint)):
         box(ax,x,.64,2.33,.47,label,fill)
     ax.text(3.75,.40,'Comparators: structural-only, edgeR-only and training mean',ha='center',fontsize=9)
@@ -60,19 +62,33 @@ def draw_schemes(output):
     ax.text(2.66,1.9,'Frozen parameters',ha='center')
     ax.text(4.7,1.9,'External cohorts',ha='center')
     ax.text(6.53,1.9,'Evaluation',ha='center')
-    for x,label,color in [(.61,'g1','#ffdcaf'),(1.02,'g5','#ffc7b8')]:
-        ax.add_patch(Circle((x,1.04),.38,fc=color,ec='#999',alpha=.78));ax.text(x,1.04,label,ha='center',va='center')
+    left, right, center_y, radius = .61, 1.02, 1.04, .38
+    ax.add_patch(Circle((left, center_y), radius, fc="#ffdcaf", ec="#999"))
+    ax.add_patch(Circle((right, center_y), radius, fc="#ffc7b8", ec="#999", alpha=.78))
+    theta = np.arccos((right-left)/(2*radius))
+    left_arc = np.linspace(theta, 2*np.pi-theta, 100)
+    right_arc = np.linspace(np.pi+theta, np.pi-theta, 100)
+    points = np.vstack([
+        np.column_stack([left+radius*np.cos(left_arc), center_y+radius*np.sin(left_arc)]),
+        np.column_stack([right+radius*np.cos(right_arc), center_y+radius*np.sin(right_arc)]),
+    ])
+    crescent = MplPath(np.vstack([points, points[0]]),
+                       [MplPath.MOVETO]+[MplPath.LINETO]*(len(points)-1)+[MplPath.CLOSEPOLY])
+    ax.add_patch(PathPatch(crescent, fc="none", ec="#9b6a42", hatch="///", lw=0))
+    ax.text(left-.055, center_y, "g1", ha="center", va="center",
+            bbox={"facecolor": "#ffdcaf", "edgecolor": "none", "pad": 1})
+    ax.text(right+.055, center_y, "g5", ha="center", va="center")
     ax.text(.82,.53,'Spleen panels',ha='center')
-    ax.annotate('',(1.83,1.33),(1.45,1.15),arrowprops={'arrowstyle':'->','color':gray})
+    ax.annotate('',(1.83,1.04),(1.45,1.04),arrowprops={'arrowstyle':'->','color':gray})
     ax.text(2.74,1.33,r'$f^*, r^*$: matched panel',ha='center',fontsize=9.5)
-    ax.text(2.74,1.08,r'$\alpha_m,\ \gamma_m$ $(m=1,2,3)$',ha='center',fontsize=10.3)
+    ax.text(2.74,1.08,r'$\alpha_m,\ \gamma_m\ (m=1,2,3)$',ha='center',fontsize=10.3)
     ax.text(2.74,.76,'From 75 combined-panel triplets\nTraining means, SDs and coefficients',ha='center',fontsize=8.5)
     for y in (1.38,.56):
         ax.annotate('',(3.96,y),(3.62,1.04),arrowprops={'arrowstyle':'->','color':gray})
     box(ax,4.02,1.11,1.47,.59,'Zheng\nMarrow recipients\nTRA and TRB',violet_bg,8.8)
     box(ax,4.02,.25,1.47,.59,'Tereshchenko\nIntact and skin graft\nCD4+ TRB',peach_bg,8.8)
     for y in (1.40,.54):ax.annotate('',(5.96,y),(5.52,y),arrowprops={'arrowstyle':'->','color':gray})
-    ax.text(6.70,1.39,'Recipient index only\nNo two-arm MAE',ha='center',va='center',fontsize=8.9)
+    ax.text(6.70,1.39,'Recipient-only data\nNo two-arm evaluation',ha='center',va='center',fontsize=8.9)
     ax.text(6.70,.54,'Shortlist overlap\nContrast, ranking, MAE',ha='center',va='center',fontsize=8.9)
     save(fig, 'external.png', output)
 
@@ -106,9 +122,13 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    plt.rcParams.update({"font.family": "serif", "font.size": 10})
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["Liberation Serif", "DejaVu Serif"],
+                         "mathtext.fontset": "custom", "mathtext.rm": "Liberation Serif",
+                         "mathtext.it": "Liberation Serif:italic", "mathtext.bf": "Liberation Serif:bold",
+                         "font.size": 10})
     draw_schemes(args.output)
 
 
 if __name__ == "__main__":
     main()
+

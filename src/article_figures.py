@@ -349,22 +349,17 @@ def plot_edger(ranking, chain, suffix=""):
 
 
 def plot_fisher_v(ranking, chain, suffix=""):
-    """Summarize signed odds ratios among significant aaV by V segment."""
+    """Summarize signed odds ratios using the shared signed-effect layout."""
+    from .signed_effects import signed_effect_panel
+
     effect = "mean_fisher_log2or"
-    tested = ranking.loc[ranking["n_fisher_significant"].gt(0)]
-    positive = tested.loc[tested[effect].gt(0)].nlargest(8, effect)
-    negative = tested.loc[tested[effect].lt(0)].nsmallest(8, effect)
-    rows = pd.concat([positive, negative]).sort_values(effect)
-    fig, ax = plt.subplots(figsize=(6.7, max(2.9, .23 * len(rows) + 1.1)), layout="constrained")
-    if rows.empty:
-        empty_axis(ax, "No nonzero mean Fisher effects.")
-        return fig
-    ax.barh(rows["v_gene"], rows[effect], color=np.where(rows[effect].gt(0), CORAL, PURPLE), height=.67)
-    ax.axvline(0, color="black", linewidth=.7)
-    _grid(ax, "x")
-    ax.set_title(f"{chain}: pooled Fisher effects for g1 versus g5+g6{suffix}")
-    ax.set_xlabel("Mean log₂ odds ratio among FDR-significant aaV")
-    return fig
+    maximum = ranking[effect].abs().max()
+    limit = max(8, int(np.ceil(maximum / 2)) * 2) if pd.notna(maximum) else 8
+    return signed_effect_panel(
+        ranking, chain, effect, "n_fisher_significant",
+        f"Mean Fisher log₂ odds ratio (g1 relative to pooled g5 and g6){suffix}",
+        limit,
+    )
 
 
 def plot_fisher(comparison, chain, suffix=""):
@@ -508,3 +503,4 @@ def plot_group_overlap(tables, chain):
     ax.set(xlim=(-3.62, 3.62), ylim=(-2.25, 2.25))
     figure.suptitle(f"{chain} g1: aaV clonotype overlap with the four background groups", y=0.976)
     return figure
+

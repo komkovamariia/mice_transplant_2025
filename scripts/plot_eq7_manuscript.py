@@ -32,12 +32,12 @@ def outline(ax, x, y):
 
 def framed_legend(ax, ncol=2, size=8):
     ax.legend(loc="lower center", bbox_to_anchor=(.5, 1.01), ncol=ncol,
-              frameon=True, facecolor="white", edgecolor="#bcbcbc",
+              frameon=True, facecolor="white", edgecolor="black",
               framealpha=1, fontsize=size, borderpad=.45, columnspacing=1,
               handletextpad=.4, fancybox=False)
 
 
-def selection_plot(summary, output, intervals=None):
+def selection_plot(summary, output):
     purple, peach, gray = PURPLE, PEACH, GRAY
     rules=[('structural_screen','Adaptive two-cutoff shortlist',peach),('S_ungated','Structural rank S(v)',peach),('initial_share_ungated','Initial V-segment share',gray),('edgeR_binary_ungated','edgeR aaV indicator',purple),('Fisher_binary_ungated','Fisher aaV indicator',purple),('V_usage_edgeR_logFC','edgeR V-segment effect',purple),('V_usage_edgeR_significant','edgeR V-segment effect + FDR',purple)]
     fig,axs=plt.subplots(1,2,figsize=(8.5,3.65),sharey=True,layout='constrained')
@@ -48,14 +48,9 @@ def selection_plot(summary, output, intervals=None):
             ax.hlines(y,0,val,color=c,alpha=.5,lw=1)
             ax.scatter(val,y,c=c,s=31,zorder=3)
             ax.annotate(f'{val:.2f}',(val,y),xytext=(10 if val>=0 else -10,0),textcoords='offset points',ha='left' if val>=0 else 'right',va='center',fontsize=9)
-        for y in ((0, 1, 3) if chain == "TRA" else (0, 3)):
+        for y in ((0, 1) if chain == "TRA" else ()):
             outline(ax, vals[y], y)
         title = f"({'ab'[i]}) {chain}"
-        if intervals is not None:
-            interval = intervals.set_index("chain").loc[chain]
-            title += (f"\nAdaptive − edgeR indicator: {100*interval.contrast:+.2f} pp"
-                      f"\nConditional 95% CI [{100*interval.bootstrap_lo:.2f}, "
-                      f"{100*interval.bootstrap_hi:.2f}]")
         ax.set_title(title, loc="left", fontsize=10.5, pad=7)
         ax.set(yticks=np.arange(len(rules)),yticklabels=[label for _,label,_ in rules],ylim=(len(rules)-.52,-.48),xlabel='Unique-aaV recovery contrast (pp)')
         ax.set_xlim(min(0,min(vals)*1.30),max(0,max(vals)*1.28))
@@ -71,19 +66,13 @@ def prediction_plot(rank, err, ext, pred, output):
     for i,(ax,chain) in enumerate(zip(axs[0],('TRA','TRB'))):
         frame=rank[rank.chain==chain].pivot(index='model',columns='top_k',values='joint_recovery_contrast')
         positions=np.arange(len(methods))
-        highlighted = ({("binary_evidence_ridge", 5), ("binary_evidence_ridge", 10),
-                        ("structural_score", 10)} if chain == "TRA"
-                       else {("continuous_edger", 2), ("aav_positive_fraction_ridge", 2)})
         for j, k in enumerate((5, 10) if chain == "TRA" else (2, 4)):
             vals = frame.loc[[m[0] for m in methods], k]
             ys = positions + (.12 if j else -.12)
             marker = "s" if j else "o"
             ax.scatter(vals, ys, c=[m[2] for m in methods], s=30, marker=marker)
             ax.scatter([], [], c="#555555", s=30, marker=marker, label=f"Top {k}")
-            for idx, method in enumerate(methods):
-                if (method[0], k) in highlighted:
-                    outline(ax, vals.iloc[idx], ys[idx])
-        ax.set(yticks=positions,yticklabels=[m[1] for m in methods],ylim=(len(methods)-.55,-.45),xlabel='Observed joint recovery contrast')
+        ax.set(yticks=positions,yticklabels=[m[1] for m in methods],ylim=(len(methods)-.55,-.45),xlabel='Intact minus mean recipient joint index')
         ax.set_title(f'({"ab"[i]}) {chain} ranking',loc='left',fontsize=10.8,pad=27);ax.grid(axis='x',color='#e5e0e5',lw=.5)
         if i:ax.tick_params(labelleft=False)
         framed_legend(ax)
@@ -96,10 +85,24 @@ def prediction_plot(rank, err, ext, pred, output):
         v=[a.loc['TRA','mae']/a.loc['TRA','constant_mae'],a.loc['TRB','mae']/a.loc['TRB','constant_mae'],e.mae/e.constant_mae]
         ys = np.arange(3) + .16*(i-1)
         ax.scatter(v, ys, c=c, marker=marker, label=label, s=32)
-        if key == "aav_positive_fraction_ridge":
-            outline(ax, v[:2], ys[:2])
-        if key == "continuous_evidence_ridge":
-            outline(ax, v[2], ys[2])
+    struct = err[(err.model == "structure_only") & (err.penalty == 1)].set_index("chain")
+    ref = struct.loc[["TRA", "TRB"], "mae"] / struct.loc[["TRA", "TRB"], "constant_mae"]
+    for row, value in enumerate(ref):
+        ax.vlines(value, row-.28, row+.28, color="black", lw=1.3,
+                  label="Structural-only" if row == 0 else None)
+    for i, (key, _, _, _) in enumerate(models):
+        data = err[(err.model == key) & (err.penalty == 1)].set_index("chain")
+        for row, chain in enumerate(("TRA", "TRB")):
+            value = data.loc[chain, "mae"] / data.loc[chain, "constant_mae"]
+            if chain == "TRA" and value < ref.iloc[row]:
+                outline(ax, value, row+.16*(i-1))
+    # Group the three TRB comparisons in one outline when all improve on structural-only.
+    trb = err[(err.chain == "TRB") & (err.penalty == 1)].set_index("model")
+    ratios = [trb.loc[key, "mae"] / trb.loc[key, "constant_mae"] for key, *_ in models]
+    if max(ratios) < ref.loc["TRB"]:
+        from matplotlib.patches import Rectangle
+        ax.add_patch(Rectangle((min(ratios)-.017, .73), max(ratios)-min(ratios)+.034,
+                               .54, fill=False, edgecolor=RED, linewidth=1, zorder=7))
     ax.axvline(1,color='#555',ls=':',lw=.8)
     ax.set(yticks=range(3),yticklabels=labels,ylim=(2.5,-.5),xlabel='MAE relative to training-mean baseline')
     ax.set_title('(c) Numerical error',loc='left',fontsize=10.8,pad=42)
@@ -111,7 +114,6 @@ def prediction_plot(rank, err, ext, pred, output):
     for i,(key,label,c,marker) in enumerate(models):
         ax.scatter(frame[key],np.arange(len(frame))+.15*(i-1),c=c,marker=marker,s=29,label=label)
     ax.scatter(obs.reindex(frame.index),np.arange(len(frame)),marker='x',c='black',s=36,label='Observed')
-    outline(ax, obs["TRBV19"], frame.index.get_loc("TRBV19"))
     ax.set(yticks=np.arange(len(frame)),yticklabels=frame.index,ylim=(len(frame)-.55,-.45),xlabel='External joint recovery contrast')
     ax.set_title('(d) External TRB',loc='left',fontsize=10.8,pad=42)
     framed_legend(ax, size=7.5);ax.grid(axis='x',color='#e5e0e5',lw=.5)
@@ -162,9 +164,7 @@ def main():
     selection = args.selection / "internal_1249_selection_summary.csv"
     if not selection.exists():
         selection = args.selection / "selection_summary.csv"
-    interval_file = args.selection / "primary_paired_bootstrap.csv"
-    intervals = pd.read_csv(interval_file) if interval_file.exists() else None
-    selection_plot(pd.read_csv(selection), args.output, intervals)
+    selection_plot(pd.read_csv(selection), args.output)
     rank = pd.read_csv(args.internal / "internal_ranking_summary.csv")
     prediction_plot(
         rank,
@@ -178,4 +178,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
